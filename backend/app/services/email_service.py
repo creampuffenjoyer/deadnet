@@ -1,32 +1,25 @@
 """
-Email service — verification and password reset emails via Gmail SMTP.
+Email service — verification and password reset emails via Resend API.
 
 Sending is always done through FastAPI BackgroundTasks so the calling
 endpoint returns immediately regardless of email delivery latency.
-All SMTP errors are caught and logged server-side only; the user never
-sees an SMTP failure message.
+All errors are caught and logged server-side only; the user never
+sees a delivery failure message.
 """
 
+import asyncio
 import logging
-from fastapi_mail import FastMail, MessageSchema, MessageType, ConnectionConfig
+import os
+
+import resend
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-_mail_config = ConnectionConfig(
-    MAIL_USERNAME=settings.SMTP_USERNAME,
-    MAIL_PASSWORD=settings.SMTP_PASSWORD,
-    MAIL_FROM=settings.SMTP_FROM_EMAIL,
-    MAIL_PORT=settings.SMTP_PORT,
-    MAIL_SERVER=settings.SMTP_HOST,
-    MAIL_FROM_NAME=settings.SMTP_FROM_NAME,
-    MAIL_STARTTLS=settings.SMTP_TLS,
-    MAIL_SSL_TLS=settings.SMTP_SSL,
-    USE_CREDENTIALS=True,
-    VALIDATE_CERTS=True,
-)
+resend.api_key = os.getenv("RESEND_API_KEY", "")
 
-_fast_mail = FastMail(_mail_config)
+_FROM = "DEADNET <onboarding@resend.dev>"
 
 
 # ---------------------------------------------------------------------------
@@ -323,106 +316,6 @@ def _denial_text(callsign: str, role: str, admin_response: str) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# Public send functions (call inside BackgroundTasks)
-# ---------------------------------------------------------------------------
-
-async def send_verification_email(email: str, callsign: str, token: str) -> None:
-    """Send account verification email. Errors are logged, never raised."""
-    verify_url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
-    message = MessageSchema(
-        subject="DEADNET — Verify Your Operator Account",
-        recipients=[email],
-        body=_verification_html(callsign, verify_url),
-        subtype=MessageType.html,
-        alternative_body=_verification_text(callsign, verify_url),
-    )
-    try:
-        await _fast_mail.send_message(message)
-    except Exception:
-        logger.exception("Failed to send verification email to %s", email)
-
-
-async def send_password_reset_email(email: str, callsign: str, token: str) -> None:
-    """Send password reset email. Errors are logged, never raised."""
-    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
-    message = MessageSchema(
-        subject="DEADNET — Pass Code Reset Request",
-        recipients=[email],
-        body=_reset_html(callsign, reset_url),
-        subtype=MessageType.html,
-        alternative_body=_reset_text(callsign, reset_url),
-    )
-    try:
-        await _fast_mail.send_message(message)
-    except Exception:
-        logger.exception("Failed to send password reset email to %s", email)
-
-
-async def send_staff_verification_email(email: str, callsign: str, role: str, token: str) -> None:
-    """Send email verification for CONTRACTOR/HANDLER registration requests."""
-    verify_url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
-    message = MessageSchema(
-        subject=f"DEADNET — Verify your {role.capitalize()} Account Request",
-        recipients=[email],
-        body=_staff_verification_html(callsign, role, verify_url),
-        subtype=MessageType.html,
-        alternative_body=_staff_verification_text(callsign, role, verify_url),
-    )
-    try:
-        await _fast_mail.send_message(message)
-    except Exception:
-        logger.exception("Failed to send staff verification email to %s", email)
-
-
-async def send_admin_notification_email(admin_email: str, callsign: str, role: str,
-                                        reason: str, email: str, timestamp: str) -> None:
-    """Notify an admin of a new CONTRACTOR/HANDLER registration request."""
-    console_url = f"{settings.FRONTEND_URL}/admin/dashboard?tab=comms"
-    message = MessageSchema(
-        subject=f"DEADNET — New {role.capitalize()} Registration Request",
-        recipients=[admin_email],
-        body=_admin_notification_html(callsign, role, reason, email, timestamp, console_url),
-        subtype=MessageType.html,
-        alternative_body=_admin_notification_text(callsign, role, reason, email, timestamp, console_url),
-    )
-    try:
-        await _fast_mail.send_message(message)
-    except Exception:
-        logger.exception("Failed to send admin notification email to %s", admin_email)
-
-
-async def send_approval_email(email: str, callsign: str, role: str, admin_response: str) -> None:
-    """Notify CONTRACTOR/HANDLER their registration was approved."""
-    login_url = f"{settings.FRONTEND_URL}/login"
-    message = MessageSchema(
-        subject="DEADNET — Registration Approved",
-        recipients=[email],
-        body=_approval_html(callsign, role, admin_response, login_url),
-        subtype=MessageType.html,
-        alternative_body=_approval_text(callsign, role, admin_response, login_url),
-    )
-    try:
-        await _fast_mail.send_message(message)
-    except Exception:
-        logger.exception("Failed to send approval email to %s", email)
-
-
-async def send_denial_email(email: str, callsign: str, role: str, admin_response: str) -> None:
-    """Notify CONTRACTOR/HANDLER their registration was denied."""
-    message = MessageSchema(
-        subject="DEADNET — Registration Request Denied",
-        recipients=[email],
-        body=_denial_html(callsign, role, admin_response),
-        subtype=MessageType.html,
-        alternative_body=_denial_text(callsign, role, admin_response),
-    )
-    try:
-        await _fast_mail.send_message(message)
-    except Exception:
-        logger.exception("Failed to send denial email to %s", email)
-
-
 def _admin_invitation_html(callsign: str, organization_name: str, activate_url: str) -> str:
     return f"""<!DOCTYPE html>
 <html>
@@ -464,40 +357,124 @@ def _admin_invitation_text(callsign: str, organization_name: str, activate_url: 
     )
 
 
+# ---------------------------------------------------------------------------
+# Public send functions (call inside BackgroundTasks)
+# ---------------------------------------------------------------------------
+
+async def send_verification_email(email: str, callsign: str, token: str) -> None:
+    """Send account verification email. Errors are logged, never raised."""
+    verify_url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": _FROM,
+            "to": [email],
+            "subject": "DEADNET — Verify Your Operator Account",
+            "html": _verification_html(callsign, verify_url),
+        })
+    except Exception:
+        logger.exception("Failed to send verification email to %s", email)
+
+
+async def send_password_reset_email(email: str, callsign: str, token: str) -> None:
+    """Send password reset email. Errors are logged, never raised."""
+    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": _FROM,
+            "to": [email],
+            "subject": "DEADNET — Pass Code Reset Request",
+            "html": _reset_html(callsign, reset_url),
+        })
+    except Exception:
+        logger.exception("Failed to send password reset email to %s", email)
+
+
+async def send_staff_verification_email(email: str, callsign: str, role: str, token: str) -> None:
+    """Send email verification for CONTRACTOR/HANDLER registration requests."""
+    verify_url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": _FROM,
+            "to": [email],
+            "subject": f"DEADNET — Verify your {role.capitalize()} Account Request",
+            "html": _staff_verification_html(callsign, role, verify_url),
+        })
+    except Exception:
+        logger.exception("Failed to send staff verification email to %s", email)
+
+
+async def send_admin_notification_email(admin_email: str, callsign: str, role: str,
+                                        reason: str, email: str, timestamp: str) -> None:
+    """Notify an admin of a new CONTRACTOR/HANDLER registration request."""
+    console_url = f"{settings.FRONTEND_URL}/admin/dashboard?tab=comms"
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": _FROM,
+            "to": [admin_email],
+            "subject": f"DEADNET — New {role.capitalize()} Registration Request",
+            "html": _admin_notification_html(callsign, role, reason, email, timestamp, console_url),
+        })
+    except Exception:
+        logger.exception("Failed to send admin notification email to %s", admin_email)
+
+
+async def send_approval_email(email: str, callsign: str, role: str, admin_response: str) -> None:
+    """Notify CONTRACTOR/HANDLER their registration was approved."""
+    login_url = f"{settings.FRONTEND_URL}/login"
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": _FROM,
+            "to": [email],
+            "subject": "DEADNET — Registration Approved",
+            "html": _approval_html(callsign, role, admin_response, login_url),
+        })
+    except Exception:
+        logger.exception("Failed to send approval email to %s", email)
+
+
+async def send_denial_email(email: str, callsign: str, role: str, admin_response: str) -> None:
+    """Notify CONTRACTOR/HANDLER their registration was denied."""
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": _FROM,
+            "to": [email],
+            "subject": "DEADNET — Registration Request Denied",
+            "html": _denial_html(callsign, role, admin_response),
+        })
+    except Exception:
+        logger.exception("Failed to send denial email to %s", email)
+
+
 async def send_admin_invitation_email(email: str, callsign: str, organization_name: str, token: str) -> None:
     """Send Admin account activation invitation (Architect-created accounts)."""
-    from app.config import settings as _s
-    activate_url = f"{_s.FRONTEND_URL}/admin/activate?token={token}"
-    message = MessageSchema(
-        subject=f"DEADNET — You have been granted Admin access for {organization_name}",
-        recipients=[email],
-        body=_admin_invitation_html(callsign, organization_name, activate_url),
-        subtype=MessageType.html,
-        alternative_body=_admin_invitation_text(callsign, organization_name, activate_url),
-    )
+    activate_url = f"{settings.FRONTEND_URL}/admin/activate?token={token}"
     try:
-        await _fast_mail.send_message(message)
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": _FROM,
+            "to": [email],
+            "subject": f"DEADNET — You have been granted Admin access for {organization_name}",
+            "html": _admin_invitation_html(callsign, organization_name, activate_url),
+        })
     except Exception:
         logger.exception("Failed to send admin invitation email to %s", email)
 
 
 async def send_test_email(to_email: str) -> bool:
-    """Send a test email to verify SMTP configuration. Returns True on success, False on failure."""
+    """Send a test email to verify Resend configuration. Returns True on success, False on failure."""
     html = """<html><body style="margin:0;padding:40px;background:#0A0A0F;font-family:'Courier New',monospace;color:#F0F0F0">
 <p style="color:#FF4500;font-size:22px;font-weight:bold;letter-spacing:6px">DEADNET</p>
-<p style="color:#6B6B80;font-size:11px;letter-spacing:4px;margin-bottom:28px">SMTP TEST</p>
+<p style="color:#6B6B80;font-size:11px;letter-spacing:4px;margin-bottom:28px">EMAIL TEST</p>
 <p>This is a test email sent from the DEADNET Architect Console.</p>
-<p>If you received this, your SMTP configuration is working correctly.</p>
+<p>If you received this, your Resend configuration is working correctly.</p>
 <p style="color:#6B6B80;margin-top:28px;font-size:11px;letter-spacing:3px">— DEADNET SYSTEM / s0L</p>
 </body></html>"""
     try:
-        message = MessageSchema(
-            subject="DEADNET — SMTP Test",
-            recipients=[to_email],
-            body=html,
-            subtype=MessageType.html,
-        )
-        await _fast_mail.send_message(message)
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": _FROM,
+            "to": [to_email],
+            "subject": "DEADNET — Email Test",
+            "html": html,
+        })
         return True
     except Exception:
         logger.exception("Test email to %s failed", to_email)
@@ -506,14 +483,12 @@ async def send_test_email(to_email: str) -> bool:
 
 async def send_already_registered_email(email: str, callsign: str) -> None:
     """Send enumeration-protection notice to existing account. Errors logged only."""
-    message = MessageSchema(
-        subject="DEADNET — Registration Attempt on Your Account",
-        recipients=[email],
-        body=_already_registered_html(callsign),
-        subtype=MessageType.html,
-        alternative_body=_already_registered_text(callsign),
-    )
     try:
-        await _fast_mail.send_message(message)
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": _FROM,
+            "to": [email],
+            "subject": "DEADNET — Registration Attempt on Your Account",
+            "html": _already_registered_html(callsign),
+        })
     except Exception:
         logger.exception("Failed to send already-registered email to %s", email)
