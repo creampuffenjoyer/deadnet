@@ -11,6 +11,7 @@ RUN NODE_OPTIONS=--max-old-space-size=1536 npm run build
 
 FROM python:3.12-slim
 WORKDIR /app
+RUN echo 'cache-bust-2026-05-11-19-52'
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ .
