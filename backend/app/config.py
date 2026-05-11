@@ -1,8 +1,20 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     DATABASE_URL: str
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_database_url(cls, v: str) -> str:
+        # Railway/Heroku provide postgres:// — SQLAlchemy needs postgresql://
+        v = v.replace("postgres://", "postgresql://", 1)
+        # Async engine requires +asyncpg driver — add if not already present
+        if "postgresql://" in v and "+asyncpg" not in v:
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
+
     REDIS_URL: str
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
