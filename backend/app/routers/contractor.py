@@ -155,16 +155,24 @@ async def create_contract(
     current_user: User = Depends(require_contractor),
     db: AsyncSession = Depends(get_db),
 ):
-    event_id = body.event_id if body.event_id is not None else await get_current_event_id(db)
     contractor_org_id = getattr(current_user, "org_id", None)
 
-    # Detect MAJOR event to set contributing_org_id
-    is_major = False
-    if event_id:
-        ev = (await db.execute(
-            select(Event).where(Event.id == event_id)
+    # Resolve event_id: explicit override → org-scoped active event → global fallback
+    if body.event_id is not None:
+        event_id = body.event_id
+    elif contractor_org_id:
+        org_event = (await db.execute(
+            select(Event)
+            .where(
+                Event.org_id == contractor_org_id,
+                Event.status.in_(["ACTIVE", "UPCOMING"]),
+            )
+            .order_by(Event.id.desc())
+            .limit(1)
         )).scalar_one_or_none()
-        is_major = ev is not None and (ev.event_type or "LOCAL") == "MAJOR"
+        event_id = org_event.id if org_event else await get_current_event_id(db)
+    else:
+        event_id = await get_current_event_id(db)
 
     c = Contract(
         title=body.title,
@@ -178,7 +186,7 @@ async def create_contract(
         tags=body.tags or [],
         event_id=event_id,
         org_id=contractor_org_id,
-        contributing_org_id=contractor_org_id if is_major else None,
+        contributing_org_id=contractor_org_id,
         is_blocked_for_own_org=False,
         created_by=current_user.id,
     )
