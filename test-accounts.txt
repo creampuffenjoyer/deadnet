@@ -1,0 +1,52 @@
+DEADNET — Test Account Credentials
+===================================
+Generated: 2026-04-03
+
+Passwords reset during testing sessions are marked with *.
+All other accounts retain their original registration password (unknown — reset via admin if needed).
+
+DEFAULT ADMIN
+-------------
+username : admin
+password : Admin@Deadnet1
+role     : ADMIN
+org      : LSPU Siniloan (org 4)
+
+ACCOUNTS WITH KNOWN PASSWORDS
+------------------------------
+username : admin2          role: ADMIN       org: Sta.Cruz (org 5)
+password : Test@1234 *
+
+username : cry0x           role: OPERATIVE   org: LSPU Siniloan (org 4)
+password : Test@1234 *
+
+username : localtest       role: OPERATIVE   org: LSPU Siniloan (org 4)
+password : Test@1234 *
+
+username : Smolfeesh       role: OPERATIVE   org: LSPU Siniloan (org 4)
+password : Test@1234 *
+
+username : sta_op1         role: OPERATIVE   org: Sta.Cruz (org 5)
+password : Test@1234 *
+
+ACCOUNTS WITH UNKNOWN PASSWORDS (original registration password)
+-----------------------------------------------------------------
+username : admin1          role: ADMIN       org: LSPU Siniloan (org 4)
+username : le1ghter        role: CONTRACTOR  org: LSPU Siniloan (org 4)
+username : spv1            role: CONTRACTOR  org: LSPU Siniloan (org 4)
+username : sup1            role: CONTRACTOR  org: LSPU Siniloan (org 4)  [PENDING_APPROVAL]
+username : supervisor1     role: CONTRACTOR  org: LSPU Siniloan (org 4)
+username : ins1            role: HANDLER     org: LSPU Siniloan (org 4)
+username : dashtest        role: OPERATIVE   org: LSPU Siniloan (org 4)
+username : hello           role: OPERATIVE   org: LSPU Siniloan (org 4)
+username : le1gh           role: OPERATIVE   org: LSPU Siniloan (org 4)
+username : s0l             role: OPERATIVE   org: LSPU Siniloan (org 4)
+username : sec_test_runner role: OPERATIVE   org: LSPU Siniloan (org 4)
+username : smolfeesh       role: OPERATIVE   org: LSPU Siniloan (org 4)
+username : testrunner      role: OPERATIVE   org: LSPU Siniloan (org 4)
+username : user1           role: OPERATIVE   org: LSPU Siniloan (org 4)
+username : user2           role: OPERATIVE   org: LSPU Siniloan (org 4)
+username : user3           role: OPERATIVE   org: LSPU Siniloan (org 4)
+
+NOTE: To reset any unknown password, use the Admin Dashboard → Operators panel
+      or run: POST /admin/users/{id}/reset-password

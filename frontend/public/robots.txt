@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /admin
+Disallow: /api/internal
+Disallow: /v01d
+
+# you read this huh
+# most people don't bother
+# L0L}

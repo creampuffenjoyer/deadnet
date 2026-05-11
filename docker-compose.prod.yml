@@ -1,0 +1,114 @@
+version: '3.9'
+
+# Production / ngrok single-port setup
+# Usage:
+#   1. Build frontend:  docker compose -f docker-compose.prod.yml run --rm frontend-build
+#   2. Start services:  docker compose -f docker-compose.prod.yml up -d
+#   3. Tunnel:          ngrok http 8000
+#
+# Before running, set in .env:
+#   FRONTEND_URL=https://your-ngrok-url.ngrok-free.app
+#   VITE_API_URL=   (empty = same-origin, no CORS issues)
+
+services:
+
+  # ── One-shot build container ─────────────────────────────────────────────
+  frontend-build:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-}
+      - VITE_VOID_B64=${VITE_VOID_B64}
+      - NODE_OPTIONS=--max-old-space-size=1536
+    command: npm run build
+    networks:
+      - deadnet
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          memory: 1792M
+
+  # ── Backend — serves API + built React frontend ──────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - uploads:/app/uploads
+      - ./frontend/dist:/app/frontend_dist:ro
+    env_file:
+      - .env
+    environment:
+      - SERVE_STATIC=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - deadnet
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: deadnet
+      POSTGRES_USER: deadnet
+      POSTGRES_PASSWORD: deadnet_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deadnet -d deadnet"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - deadnet
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - deadnet
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+volumes:
+  postgres_data:
+  uploads:
+
+networks:
+  deadnet:
+    driver: bridge
