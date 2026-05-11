@@ -12,7 +12,8 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, or_, select
+from uuid import UUID
+from sqlalchemy import delete, func, or_, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -734,6 +735,70 @@ async def get_architect_settings(
 
 class PatchSettingsBody(BaseModel):
     settings: dict = Field(..., description="Flat key→value dict of settings to update")
+
+
+# ---------------------------------------------------------------------------
+# Verification endpoints — global (no org restriction)
+# ---------------------------------------------------------------------------
+
+class BulkVerifyBody(BaseModel):
+    user_ids: list[UUID]
+
+
+@router.post("/users/bulk-verify", status_code=200)
+async def bulk_verify_global(
+    body: BulkVerifyBody,
+    _arch=Depends(require_architect),
+    db: AsyncSession = Depends(get_db),
+):
+    if not body.user_ids:
+        raise HTTPException(status_code=400, detail="No users provided")
+    result = await db.execute(
+        sa_update(User)
+        .where(User.id.in_(body.user_ids))
+        .values(is_verified=True, verification_token=None, verification_token_expires=None)
+    )
+    await db.execute(
+        sa_update(User)
+        .where(User.id.in_(body.user_ids), User.account_status == AccountStatus.PENDING_VERIFICATION.value)
+        .values(account_status=AccountStatus.ACTIVE.value)
+    )
+    await db.commit()
+    return {"verified": result.rowcount}
+
+
+@router.post("/users/{user_id}/verify", status_code=200)
+async def verify_user_global(
+    user_id: UUID,
+    _arch=Depends(require_architect),
+    db: AsyncSession = Depends(get_db),
+):
+    target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    target.is_verified = True
+    target.verification_token = None
+    target.verification_token_expires = None
+    if target.account_status == AccountStatus.PENDING_VERIFICATION.value:
+        target.account_status = AccountStatus.ACTIVE.value
+    await db.commit()
+    return {"message": f"{target.username} verified", "is_verified": True}
+
+
+@router.post("/users/{user_id}/unverify", status_code=200)
+async def unverify_user_global(
+    user_id: UUID,
+    _arch=Depends(require_architect),
+    db: AsyncSession = Depends(get_db),
+):
+    target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    target.is_verified = False
+    if target.account_status == AccountStatus.ACTIVE.value:
+        target.account_status = AccountStatus.PENDING_VERIFICATION.value
+    await db.commit()
+    return {"message": f"{target.username} unverified", "is_verified": False}
 
 
 @router.patch("/settings")

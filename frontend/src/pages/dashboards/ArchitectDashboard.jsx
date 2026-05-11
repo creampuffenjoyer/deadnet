@@ -1428,6 +1428,9 @@ function OperatorsTab({ orgId, archScoped = false, defaultSelectedId = null }) {
   const [saving, setSaving] = useState(false)
   const [tempPwd, setTempPwd] = useState('')
   const [roleTab, setRoleTab] = useState('ALL')
+  const [verifyFilter, setVerifyFilter] = useState('ALL')
+  const [checkedIds, setCheckedIds] = useState(new Set())
+  const [bulkVerifying, setBulkVerifying] = useState(false)
   const [sortKey, setSortKey] = useState('role')
   const [sortDir, setSortDir] = useState('asc')
   const [confirm, setConfirm] = useState(null)
@@ -1479,6 +1482,47 @@ function OperatorsTab({ orgId, archScoped = false, defaultSelectedId = null }) {
     } catch { /* ignore */ }
   }
 
+  async function verifyUser(id) {
+    try {
+      await client.post(`/architect/users/${id}/verify`)
+      setUsers(prev => prev.map(u => u.id === id ? { ...u, is_verified: true } : u))
+      setSelected(prev => prev?.id === id ? { ...prev, is_verified: true } : prev)
+    } catch { /* ignore */ }
+  }
+
+  async function unverifyUser(id) {
+    try {
+      await client.post(`/architect/users/${id}/unverify`)
+      setUsers(prev => prev.map(u => u.id === id ? { ...u, is_verified: false } : u))
+      setSelected(prev => prev?.id === id ? { ...prev, is_verified: false } : prev)
+    } catch { /* ignore */ }
+  }
+
+  async function bulkVerify() {
+    if (!checkedIds.size) return
+    setBulkVerifying(true)
+    try {
+      await client.post('/architect/users/bulk-verify', { user_ids: [...checkedIds] })
+      const ids = [...checkedIds]
+      setUsers(prev => prev.map(u => ids.includes(u.id) ? { ...u, is_verified: true } : u))
+      setCheckedIds(new Set())
+    } catch { /* ignore */ }
+    finally { setBulkVerifying(false) }
+  }
+
+  function toggleCheck(id) {
+    setCheckedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleCheckAll() {
+    const unverifiedIds = filtered.filter(u => !u.is_verified).map(u => u.id)
+    setCheckedIds(prev => unverifiedIds.every(id => prev.has(id)) ? new Set() : new Set(unverifiedIds))
+  }
+
   function toggleSort(key) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir('asc') }
@@ -1487,6 +1531,8 @@ function OperatorsTab({ orgId, archScoped = false, defaultSelectedId = null }) {
   const filtered = users
     .filter(u => {
       if (roleTab !== 'ALL' && u.role !== roleTab) return false
+      if (verifyFilter === 'VERIFIED' && !u.is_verified) return false
+      if (verifyFilter === 'UNVERIFIED' && u.is_verified) return false
       return (
         u.username?.toLowerCase().includes(search.toLowerCase()) ||
         u.email?.toLowerCase().includes(search.toLowerCase())
@@ -1537,7 +1583,7 @@ function OperatorsTab({ orgId, archScoped = false, defaultSelectedId = null }) {
       {/* List */}
       <div className="flex-1 min-w-0">
         {/* Role filter tabs */}
-        <div className="flex gap-0 border-b border-ghost/10 mb-3 overflow-x-auto">
+        <div className="flex gap-0 border-b border-ghost/10 mb-0 overflow-x-auto">
           {['ALL', 'OPERATIVE', 'HANDLER', 'CONTRACTOR', 'ADMIN'].map(r => {
             const count = r === 'ALL' ? users.length : users.filter(u => u.role === r).length
             const label = r === 'ALL' ? 'ALL' : _roleLabel(r, terms)
@@ -1557,6 +1603,25 @@ function OperatorsTab({ orgId, archScoped = false, defaultSelectedId = null }) {
             )
           })}
         </div>
+        {/* Verification filter */}
+        <div className="flex gap-0 border-b border-ghost/10 mb-3 overflow-x-auto">
+          {[['ALL', users.length], ['VERIFIED', users.filter(u => u.is_verified).length], ['UNVERIFIED', users.filter(u => !u.is_verified).length]].map(([f, count]) => (
+            <button
+              key={f}
+              onClick={() => setVerifyFilter(f)}
+              className={`font-mono text-[10px] tracking-widest px-3 py-1.5 border-b-2 transition-colors whitespace-nowrap ${
+                verifyFilter === f
+                  ? f === 'UNVERIFIED' ? 'border-flare text-flare' : 'border-ghost/40 text-bone'
+                  : 'border-transparent text-ghost hover:text-bone'
+              }`}
+            >
+              {f}
+              <span className="ml-1.5" style={{ fontSize: '9px', color: verifyFilter === f ? '#6B6B85' : '#3A3A52' }}>
+                {count}
+              </span>
+            </button>
+          ))}
+        </div>
         <input
           className="w-full bg-transparent border border-ghost/20 px-3 py-2 font-mono text-xs text-bone outline-none focus:border-ember mb-3 caret-ember"
           placeholder="Search callsign or email..."
@@ -1564,7 +1629,14 @@ function OperatorsTab({ orgId, archScoped = false, defaultSelectedId = null }) {
           onChange={e => setSearch(e.target.value)}
         />
         <div className="border border-ghost/20 rounded-sm overflow-hidden">
-          <div className="grid grid-cols-[1fr_100px_80px_90px] px-4 py-2 border-b border-ghost/10 font-mono text-[10px] tracking-widest text-ghost">
+          <div className="grid grid-cols-[20px_1fr_100px_80px_110px] px-4 py-2 border-b border-ghost/10 font-mono text-[10px] tracking-widest text-ghost items-center">
+            <input
+              type="checkbox"
+              className="accent-flare cursor-pointer"
+              checked={filtered.filter(u => !u.is_verified).length > 0 && filtered.filter(u => !u.is_verified).every(u => checkedIds.has(u.id))}
+              onChange={toggleCheckAll}
+              title="Select all unverified"
+            />
             {[['CALLSIGN','callsign'],['ROLE','role'],['BC','bc'],['STATUS','status']].map(([label, key]) => (
               <span
                 key={key}
@@ -1576,23 +1648,62 @@ function OperatorsTab({ orgId, archScoped = false, defaultSelectedId = null }) {
               </span>
             ))}
           </div>
-          <div className="divide-y divide-ghost/10 max-h-[calc(100vh-320px)] overflow-y-auto">
+          <div className="divide-y divide-ghost/10 max-h-[calc(100vh-360px)] overflow-y-auto">
             {filtered.map(u => (
               <div
                 key={u.id}
-                className={`grid grid-cols-[1fr_100px_80px_90px] px-4 py-2.5 cursor-pointer transition-colors items-center ${selected?.id === u.id ? 'bg-abyss' : 'hover:bg-abyss/40'}`}
-                onClick={() => { setSelected(u); setTempPwd('') }}
+                className={`grid grid-cols-[20px_1fr_100px_80px_110px] px-4 py-2.5 transition-colors items-center ${selected?.id === u.id ? 'bg-abyss' : 'hover:bg-abyss/40'}`}
               >
-                <span className="font-mono text-sm text-bone truncate">{u.username}</span>
-                <span className="font-mono text-[10px] tracking-wider" style={{ color: ROLE_COLOR[u.role] || '#6B6B80' }}>{_roleLabel(u.role, terms)}</span>
-                <span className="font-mono text-xs text-ghost">{u.bc_total ?? 0}</span>
-                <span className={`font-mono text-[10px] ${u.is_banned ? 'text-danger' : 'text-success'}`}>
-                  {u.is_banned ? 'BANNED' : 'ACTIVE'}
+                <input
+                  type="checkbox"
+                  className="accent-flare cursor-pointer"
+                  checked={checkedIds.has(u.id)}
+                  disabled={u.is_verified}
+                  onChange={() => toggleCheck(u.id)}
+                  onClick={e => e.stopPropagation()}
+                />
+                <span
+                  className="font-mono text-sm text-bone truncate cursor-pointer"
+                  onClick={() => { setSelected(u); setTempPwd('') }}
+                >{u.username}</span>
+                <span
+                  className="font-mono text-[10px] tracking-wider cursor-pointer"
+                  style={{ color: ROLE_COLOR[u.role] || '#6B6B80' }}
+                  onClick={() => { setSelected(u); setTempPwd('') }}
+                >{_roleLabel(u.role, terms)}</span>
+                <span
+                  className="font-mono text-xs text-ghost cursor-pointer"
+                  onClick={() => { setSelected(u); setTempPwd('') }}
+                >{u.bc_total ?? 0}</span>
+                <span className="font-mono text-[10px] flex items-center gap-1">
+                  {u.is_banned
+                    ? <span className="text-danger">BANNED</span>
+                    : !u.is_verified
+                      ? <span className="text-flare">⚠ UNVERIFIED</span>
+                      : <span className="text-success">ACTIVE</span>
+                  }
                 </span>
               </div>
             ))}
           </div>
         </div>
+        {checkedIds.size > 0 && (
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={bulkVerify}
+              disabled={bulkVerifying}
+              className="font-mono text-[10px] tracking-widest px-4 py-1.5 border border-flare/40 text-flare disabled:opacity-40 hover:bg-flare/10 transition-colors"
+            >
+              {bulkVerifying ? '[ VERIFYING... ]' : `[ VERIFY SELECTED (${checkedIds.size}) ]`}
+            </button>
+            <button
+              onClick={() => setCheckedIds(new Set())}
+              className="font-mono text-[10px] tracking-widest text-ghost hover:text-bone"
+            >
+              CLEAR
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Detail panel */}
@@ -1604,6 +1715,12 @@ function OperatorsTab({ orgId, archScoped = false, defaultSelectedId = null }) {
             <p className="font-mono text-xs text-ghost">{selected.email}</p>
           </div>
 
+          <div className="mb-1">
+            {selected.is_verified
+              ? <span className="font-mono text-[10px] text-success">✓ VERIFIED</span>
+              : <span className="font-mono text-[10px] text-flare">⚠ UNVERIFIED</span>
+            }
+          </div>
           <div className="space-y-2 text-xs">
             {[
               ['School',     selected.school],
@@ -1646,6 +1763,21 @@ function OperatorsTab({ orgId, archScoped = false, defaultSelectedId = null }) {
 
           {/* Actions */}
           <div className="space-y-1.5">
+            {selected.is_verified ? (
+              <button
+                onClick={() => unverifyUser(selected.id)}
+                className="w-full font-mono text-[10px] tracking-widest py-1.5 border border-flare/40 text-flare transition-all hover:bg-flare/10"
+              >
+                [ UNVERIFY OPERATOR ]
+              </button>
+            ) : (
+              <button
+                onClick={() => verifyUser(selected.id)}
+                className="w-full font-mono text-[10px] tracking-widest py-1.5 border border-success/40 text-success transition-all hover:bg-success/10"
+              >
+                [ VERIFY OPERATOR ]
+              </button>
+            )}
             <button
               onClick={() => guardedPatch(
                 selected.id,
