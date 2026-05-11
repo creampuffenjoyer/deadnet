@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.config import settings as app_settings
 from app.database import AsyncSessionLocal, Base, engine
@@ -202,8 +203,10 @@ async def _seed():
                 "max_upload_mb": "50",
                 "allowed_file_types": "zip,pdf,txt,png,jpg,bin",
             }
-            for key, value in defaults.items():
-                db.add(PlatformSettings(key=key, value=value))
+            settings_list = [{"key": k, "value": v} for k, v in defaults.items()]
+            await db.execute(
+                pg_insert(PlatformSettings).values(settings_list).on_conflict_do_nothing(index_elements=["key"])
+            )
             await db.flush()
             print(f"[DEADNET] Seeded admin: {app_settings.ADMIN_USERNAME}")
 
