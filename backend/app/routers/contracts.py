@@ -104,22 +104,6 @@ async def list_contracts(
     )
 
     scope = get_organization_scope(current_user, org_id)
-    # [DIAG] Count before org filter (event+published+non-void only)
-    _cnt_event = (await db.execute(
-        select(func.count(Contract.id)).where(
-            Contract.is_published == True, Contract.event_id == event_id, Contract.is_void == False
-        )
-    )).scalar()
-    # [DIAG] Count after org filter
-    _cnt_org = (await db.execute(
-        select(func.count(Contract.id)).where(
-            Contract.is_published == True, Contract.event_id == event_id,
-            Contract.is_void == False, Contract.org_id == scope
-        )
-    )).scalar() if scope is not None else _cnt_event
-    _cats = active_event.allowed_categories if active_event else None
-    print(f"[DIAG] scope={scope} event_id={event_id} cnt_event={_cnt_event} cnt_org={_cnt_org} allowed_cats={_cats}", flush=True)
-
     contract_q = (
         select(Contract)
         .where(Contract.is_published == True, Contract.event_id == event_id, Contract.is_void == False)
@@ -130,10 +114,11 @@ async def list_contracts(
     result = await db.execute(contract_q)
     contracts = result.scalars().all()
 
-    # Filter by event's allowed_categories if set
+    # Filter by event's allowed_categories if set.
+    # Normalize to uppercase so "Web" and "WEB" both match the enum value "WEB".
     if active_event and active_event.allowed_categories:
-        contracts = [c for c in contracts if str(c.category) in active_event.allowed_categories]
-    print(f"[DIAG] final={len(contracts)}", flush=True)
+        _allowed = {cat.upper() for cat in active_event.allowed_categories}
+        contracts = [c for c in contracts if str(c.category).upper() in _allowed]
     decay_mode_out = (
         (active_event.decay_mode_override or decay_settings.get("decay_mode", "TIME_BASED"))
         if active_event else decay_settings.get("decay_mode", "TIME_BASED")
