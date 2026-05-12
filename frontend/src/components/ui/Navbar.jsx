@@ -242,9 +242,7 @@ export default function Navbar() {
               )}
             </span>
           )}
-          {user.role === 'OPERATIVE' && (
-            <NavLink to="/settings">[ OPERATOR SETTINGS ]</NavLink>
-          )}
+          <NavLink to="/settings">[ OPERATOR SETTINGS ]</NavLink>
           {ROLE_PATH[user.role] && (
             <NavLink to={ROLE_PATH[user.role]}>[ {ROLE_LABEL[user.role]} ]</NavLink>
           )}

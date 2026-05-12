@@ -304,6 +304,9 @@ export default function ProfileSettings() {
   const navigate = useNavigate()
   const { competition_start } = usePlatformFormat()
 
+  const isOperative = user?.role === 'OPERATIVE'
+  const profileEndpoint = isOperative ? '/operative/profile' : '/shared/profile'
+
   const [profile, setProfile] = useState({
     username: '', full_name: '', student_id: '', school: '', section: '', year_level: '1st Year',
   })
@@ -327,7 +330,7 @@ export default function ProfileSettings() {
   const competitionStarted = competition_start && Date.now() > new Date(competition_start).getTime()
 
   useEffect(() => {
-    client.get('/operative/profile')
+    client.get(profileEndpoint)
       .then(r => setProfile({
         username: r.data.username || '',
         full_name: r.data.full_name || '',
@@ -338,14 +341,14 @@ export default function ProfileSettings() {
       }))
       .catch(() => {})
       .finally(() => setProfileLoading(false))
-  }, [])
+  }, [profileEndpoint])
 
   async function saveIdentity(e) {
     e.preventDefault()
     setProfileSaving(true)
     setProfileMsg({ text: '', ok: true })
     try {
-      await client.patch('/operative/profile', {
+      await client.patch(profileEndpoint, {
         username: profile.username,
         full_name: profile.full_name,
         school: profile.school,

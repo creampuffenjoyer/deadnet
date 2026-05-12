@@ -5,7 +5,7 @@ import client from '../../api/client'
 import GoingMaintenanceScreen from './GoingMaintenanceScreen'
 import MaintenanceScreen from './MaintenanceScreen'
 
-const EXEMPT_PATHS = ['/login', '/verify-email', '/reset-password', '/admin/activate']
+const EXEMPT_PATHS = ['/verify-email', '/reset-password', '/admin/activate']
 
 export default function MaintenanceGate({ children }) {
   const { user } = useAuth()

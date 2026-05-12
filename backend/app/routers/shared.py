@@ -1,7 +1,9 @@
+import re
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -90,8 +92,63 @@ async def admin_complete_onboarding(
     db: AsyncSession = Depends(get_db),
 ):
     if current_user.role != UserRole.ADMIN:
-        from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="Admin only")
     current_user.onboarding_complete = True
     await db.commit()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# GET/PATCH /shared/profile — profile settings for all staff roles
+# ---------------------------------------------------------------------------
+
+class StaffSettingsUpdate(BaseModel):
+    username:   Optional[str] = Field(None, min_length=3, max_length=50)
+    full_name:  Optional[str] = Field(None, max_length=100)
+    school:     Optional[str] = Field(None, max_length=200)
+    section:    Optional[str] = Field(None, max_length=100)
+    year_level: Optional[str] = Field(None, max_length=20)
+
+
+@router.get("/profile")
+async def get_profile(current_user: User = Depends(require_authenticated)):
+    return {
+        "username":    current_user.username,
+        "email":       current_user.email,
+        "full_name":   current_user.full_name,
+        "student_id":  current_user.student_id,
+        "school":      current_user.school,
+        "section":     current_user.section,
+        "year_level":  current_user.year_level,
+    }
+
+
+@router.patch("/profile")
+async def update_profile(
+    body: StaffSettingsUpdate,
+    current_user: User = Depends(require_authenticated),
+    db: AsyncSession = Depends(get_db),
+):
+    if body.username is not None:
+        new_un = body.username.strip()
+        if len(new_un) < 3:
+            raise HTTPException(status_code=400, detail="CALLSIGN_TOO_SHORT")
+        if not re.match(r"^[a-zA-Z0-9_\-]+$", new_un):
+            raise HTTPException(status_code=400, detail="CALLSIGN_INVALID")
+        if new_un != current_user.username:
+            taken = (await db.execute(select(User).where(User.username == new_un))).scalar_one_or_none()
+            if taken:
+                raise HTTPException(status_code=400, detail="CALLSIGN_TAKEN")
+            current_user.username = new_un
+    if body.full_name  is not None: current_user.full_name  = body.full_name.strip()  or None
+    if body.school     is not None: current_user.school     = body.school.strip()     or None
+    if body.section    is not None: current_user.section    = body.section.strip()    or None
+    if body.year_level is not None: current_user.year_level = body.year_level         or None
+    await db.commit()
+    return {
+        "username":   current_user.username,
+        "full_name":  current_user.full_name,
+        "school":     current_user.school,
+        "section":    current_user.section,
+        "year_level": current_user.year_level,
+    }

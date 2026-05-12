@@ -118,7 +118,7 @@ export default function Landing() {
             DEADNET
           </GlitchText>
           <p className="font-mono text-ghost text-sm md:text-base tracking-widest uppercase">
-            UNDERGROUND CAPTURE THE FLAG — Contracts. Teams. Bounty Credits.
+            DEADNET IS LIVE
           </p>
         </motion.div>
 
