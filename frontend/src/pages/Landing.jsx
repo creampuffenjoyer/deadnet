@@ -117,9 +117,6 @@ export default function Landing() {
           >
             DEADNET
           </GlitchText>
-          <p className="font-mono text-ghost text-sm md:text-base tracking-widest uppercase">
-            DEADNET IS LIVE
-          </p>
         </motion.div>
 
         {/* Countdown or live status */}
