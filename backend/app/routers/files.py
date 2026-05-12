@@ -1,11 +1,14 @@
+import mimetypes
 import os
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import require_authenticated
+from app.models.file_storage import FileStorage
 from app.models.user import User, UserRole
 from app.utils.event import get_competition_state
 
@@ -30,8 +33,25 @@ async def serve_file(
     if any(c in filename for c in ("/", "\\", "..")):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
+    # Check disk first — works automatically when a volume is mounted later
     file_path = os.path.join(UPLOAD_DIR, filename)
-    if not os.path.isfile(file_path):
+    if os.path.isfile(file_path):
+        return FileResponse(file_path)
+
+    # Fall back to DB storage
+    result = await db.execute(select(FileStorage).where(FileStorage.filename == filename))
+    row = result.scalar_one_or_none()
+    if not row:
         raise HTTPException(status_code=404, detail="File not found")
 
-    return FileResponse(file_path)
+    media_type = (
+        row.content_type
+        or mimetypes.guess_type(filename)[0]
+        or "application/octet-stream"
+    )
+    disposition = f'attachment; filename="{row.original_name or filename}"'
+    return Response(
+        content=row.content,
+        media_type=media_type,
+        headers={"Content-Disposition": disposition},
+    )

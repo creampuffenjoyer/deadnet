@@ -13,6 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.config import settings as app_settings
 from app.database import AsyncSessionLocal, Base, engine
 from app.models.contract import Contract, ContractCategory, ContractRarity, IntelDrop, VoidAttempt, VoidClaim  # noqa: F401
+from app.models.file_storage import FileStorage  # noqa: F401
 from app.models.event import Event, EventStatus  # noqa: F401 — registers table with Base
 from app.models.settings import PlatformSettings
 from app.models.team import Team, TeamMembership, ContractAssignment  # noqa: F401
@@ -778,6 +779,16 @@ END $$""",
   flag_hash VARCHAR(500) NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_contract_org_flag UNIQUE (contract_id, org_id)
+)""",
+            # File storage table — persists uploaded attachments in the DB
+            # (fallback when no persistent volume is mounted at /app/uploads)
+            """CREATE TABLE IF NOT EXISTS file_storage (
+  filename VARCHAR(255) PRIMARY KEY,
+  content BYTEA NOT NULL,
+  original_name VARCHAR(255),
+  content_type VARCHAR(100),
+  file_size INTEGER NOT NULL,
+  uploaded_at TIMESTAMP NOT NULL DEFAULT NOW()
 )""",
             # Organization logo
             "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS logo_url VARCHAR(500)",

@@ -717,9 +717,26 @@ async def upload_attachment(
         raise HTTPException(status_code=400, detail=f"File type not allowed: {ext}")
     stored_name = f"{_uuid.uuid4()}{ext}"
 
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    with open(os.path.join(UPLOAD_DIR, stored_name), "wb") as f:
-        f.write(contents)
+    # Always persist to DB (works on Railway without a volume).
+    # If /app/uploads is later mounted as a persistent volume, the serve
+    # endpoint will find the file on disk first and bypass the DB lookup.
+    from app.models.file_storage import FileStorage
+    db_file = FileStorage(
+        filename=stored_name,
+        content=contents,
+        original_name=original_name,
+        content_type=file.content_type or "application/octet-stream",
+        file_size=len(contents),
+    )
+    db.add(db_file)
+
+    # Also write to disk if the uploads dir is available (best-effort; no crash if it fails)
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        with open(os.path.join(UPLOAD_DIR, stored_name), "wb") as f:
+            f.write(contents)
+    except OSError:
+        pass
 
     attachments = list(contract.attachments or [])
     attachments.append({"stored": stored_name, "original": original_name, "size": len(contents)})
