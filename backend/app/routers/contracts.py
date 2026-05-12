@@ -383,7 +383,7 @@ async def claim_contract(
             attempt_count=1,
             last_attempt_at=_now,
         ).on_conflict_do_update(
-            constraint="uq_attempt_netrunner_contract",
+            constraint="uq_attempt_operative_contract",
             set_={
                 "attempt_count": ContractAttempt.attempt_count + 1,
                 "last_attempt_at": _now,

@@ -293,6 +293,7 @@ export default function ContractBoard() {
   const [voidContracts, setVoidContracts] = useState([])
   const [voidLoading, setVoidLoading] = useState(false)
   const [voidDenied, setVoidDenied] = useState(false)
+  const [flashMsg, setFlashMsg] = useState(null)
 
   const hasVoidAccess = user?.void_access === true
 
@@ -390,8 +391,12 @@ export default function ContractBoard() {
         const final = { my_assignment_id: data.id }
         setContracts(prev => prev.map(c => patch(c, final)))
         setSelected(prev => prev ? patch(prev, final) : null)
-      } catch {
+      } catch (err) {
         fetchContracts()
+        if (err?.response?.status === 403) {
+          setFlashMsg('You must be in a team to use the working tracker.')
+          setTimeout(() => setFlashMsg(null), 4000)
+        }
       }
     }
   }, [user?.username, fetchContracts])
@@ -579,6 +584,12 @@ export default function ContractBoard() {
           <span className="font-mono text-xs text-ghost/60">
             Flag submissions are disabled{competition_halted_by ? ` by ${competition_halted_by}` : ''}.
           </span>
+        </div>
+      )}
+
+      {flashMsg && (
+        <div className="relative z-10 bg-flare/10 border-b border-flare/30 px-6 py-2 flex items-center gap-3">
+          <span className="font-mono text-xs text-flare tracking-widest">{flashMsg}</span>
         </div>
       )}
 
