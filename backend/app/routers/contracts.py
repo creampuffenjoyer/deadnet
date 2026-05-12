@@ -67,6 +67,7 @@ async def _get_claim_settings(db: AsyncSession) -> dict:
         select(PlatformSettings).where(
             PlatformSettings.key.in_([
                 "max_flag_attempts",
+                "allow_solo",
                 "competition_start", "competition_end",
                 "competition_active", "competition_manual_end",
             ])
@@ -328,6 +329,17 @@ async def claim_contract(
         )).scalar_one_or_none()
         if not reg:
             raise HTTPException(status_code=403, detail="NOT_REGISTERED")
+
+    # Solo enforcement — if allow_solo is disabled, operative must be on a team
+    if claim_cfg.get("allow_solo", "true").lower() == "false" and event_id:
+        team_row = (await db.execute(
+            select(TeamMembership.team_id).where(
+                TeamMembership.operative_id == current_user.id,
+                TeamMembership.event_id == event_id,
+            )
+        )).scalar_one_or_none()
+        if not team_row:
+            raise HTTPException(status_code=403, detail="SOLO_NOT_ALLOWED")
 
     # Rate limit: 5 attempts / min / operative / contract
     if not await check_claim_rate_limit(str(current_user.id), str(contract_id)):

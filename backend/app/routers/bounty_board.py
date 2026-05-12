@@ -707,6 +707,11 @@ async def solve_feed(
     if not active_event or event_id is None:
         return {"state": "NO_EVENT", "entries": [], "is_major": False}
 
+    # Frozen board: operatives see no feed data
+    _role = getattr(current_user, 'role', None)
+    if await _is_frozen(db) and _role == UserRole.OPERATIVE:
+        return {"state": "FROZEN", "entries": [], "is_major": False}
+
     is_major_feed = (active_event.event_type or "LOCAL") == "MAJOR"
     feed_org_map: dict = {}
     if is_major_feed:
