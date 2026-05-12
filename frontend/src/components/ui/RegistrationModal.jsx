@@ -71,7 +71,7 @@ export default function RegistrationModal({ isOpen, onClose, event, onSuccess })
       if (onSuccess) onSuccess()
       setTimeout(() => {
         onClose()
-        navigate('/contracts')
+        if (!onSuccess) navigate('/contracts')
       }, 2200)
     } catch (err) {
       const detail = err.response?.data?.detail || ''

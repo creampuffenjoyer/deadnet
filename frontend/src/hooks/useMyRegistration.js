@@ -14,6 +14,8 @@ export function useMyRegistration(eventId) {
       setState({ registered: false, status: null, registeredAt: null, registeredBy: null, loading: false })
       return
     }
+    // Reset to loading so ContractBoard doesn't flash "not_registered" while the fetch is in-flight
+    setState(prev => ({ ...prev, loading: true }))
     let mounted = true
     client.get(`/events/${eventId}/registration/me`)
       .then(r => {
