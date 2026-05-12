@@ -82,6 +82,7 @@ const EMPTY_FORM = {
   flag: '',
   is_published: false,
   intel_drops: [{ content: '', cost_bc: 30 }],
+  max_attempts: 0,
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +105,7 @@ function ContractFormModal({ contract, onClose, onSaved, onFileUploaded, events 
         intel_drops: contract.intel_drops?.length
           ? contract.intel_drops
           : [{ content: '', cost_bc: 30 }],
+        max_attempts: contract.max_attempts ?? 0,
       }
     : { ...EMPTY_FORM, intel_drops: [{ content: '', cost_bc: 30 }] }
   )
@@ -328,6 +330,18 @@ function ContractFormModal({ contract, onClose, onSaved, onFileUploaded, events 
                 className="w-full bg-void border border-ghost/20 rounded-sm px-3 py-2 font-mono text-sm text-bone focus:outline-none focus:border-ember"
                 value={form.base_bc_value}
                 onChange={e => setForm(f => ({ ...f, base_bc_value: parseInt(e.target.value) || 0 }))}
+              />
+            </div>
+            <div>
+              <label className="font-mono text-[10px] text-ghost tracking-widest block mb-1">
+                MAX ATTEMPTS <span className="text-ghost/40 normal-case tracking-normal">(0 = unlimited)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                className="w-full bg-void border border-ghost/20 rounded-sm px-3 py-2 font-mono text-sm text-bone focus:outline-none focus:border-ember"
+                value={form.max_attempts}
+                onChange={e => setForm(f => ({ ...f, max_attempts: Math.max(0, parseInt(e.target.value) || 0) }))}
               />
             </div>
           </div>
@@ -1100,6 +1114,7 @@ function SlideOutPanel({ contract, onClose, onSaved, onDelete, onFileUploaded })
     base_bc_value: contract.base_bc_value,
     is_published:  contract.is_published,
     flag:          '',
+    max_attempts:  contract.max_attempts ?? 0,
     intel_drops:   contract.intel_drops?.length ? [...contract.intel_drops] : [],
   }
 
@@ -1288,17 +1303,30 @@ function SlideOutPanel({ contract, onClose, onSaved, onDelete, onFileUploaded })
               />
             </div>
             <div>
-              <label className="font-mono text-[10px] text-ghost/60 tracking-widest block mb-1">STATUS</label>
-              <button
-                onClick={() => canEdit && setForm(f => ({ ...f, is_published: !f.is_published }))}
-                className={`w-full flex items-center gap-2 px-3 py-2 border rounded-sm font-mono text-xs transition-colors ${
-                  form.is_published ? 'border-success/40 text-success bg-success/5' : 'border-ghost/20 text-ghost'
-                } ${!canEdit ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-              >
-                <span className={`w-2 h-2 rounded-full shrink-0 ${form.is_published ? 'bg-success' : 'bg-ghost/30'}`} />
-                {form.is_published ? 'PUBLISHED' : 'DRAFT'}
-              </button>
+              <label className="font-mono text-[10px] text-ghost/60 tracking-widest block mb-1">
+                MAX ATTEMPTS <span className="text-ghost/30 normal-case tracking-normal">(0=∞)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                className="w-full bg-void border border-ghost/20 rounded-sm px-3 py-2 font-mono text-sm text-bone focus:outline-none focus:border-ember"
+                value={form.max_attempts}
+                onChange={e => setForm(f => ({ ...f, max_attempts: Math.max(0, parseInt(e.target.value) || 0) }))}
+                disabled={!canEdit}
+              />
             </div>
+          </div>
+          <div>
+            <label className="font-mono text-[10px] text-ghost/60 tracking-widest block mb-1">STATUS</label>
+            <button
+              onClick={() => canEdit && setForm(f => ({ ...f, is_published: !f.is_published }))}
+              className={`w-full flex items-center gap-2 px-3 py-2 border rounded-sm font-mono text-xs transition-colors ${
+                form.is_published ? 'border-success/40 text-success bg-success/5' : 'border-ghost/20 text-ghost'
+              } ${!canEdit ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              <span className={`w-2 h-2 rounded-full shrink-0 ${form.is_published ? 'bg-success' : 'bg-ghost/30'}`} />
+              {form.is_published ? 'PUBLISHED' : 'DRAFT'}
+            </button>
           </div>
 
           {/* ── DESCRIPTION */}

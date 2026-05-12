@@ -40,6 +40,7 @@ class ContractUpdateRequest(BaseModel):
     is_published: Optional[bool] = None
     tags: Optional[List[str]] = None
     intel_drops: Optional[List[IntelDropUpdate]] = None  # replaces all existing drops
+    max_attempts: Optional[int] = None
 
 
 class ContractCreateRequest(BaseModel):
@@ -53,6 +54,7 @@ class ContractCreateRequest(BaseModel):
     tags: Optional[List[str]] = None
     intel_drops: Optional[List[IntelDropUpdate]] = None
     event_id: Optional[int] = None  # override current event (for borrowed contractors)
+    max_attempts: int = 0
 
 
 async def _get_decay_settings(db: AsyncSession) -> dict:
@@ -189,6 +191,7 @@ async def create_contract(
         contributing_org_id=contractor_org_id,
         is_blocked_for_own_org=False,
         created_by=current_user.id,
+        max_attempts=body.max_attempts,
     )
     db.add(c)
     await db.flush()   # populate c.id
@@ -285,6 +288,7 @@ async def list_all_contracts(
             "created_at": c.created_at,
             "contributing_org_id": c.contributing_org_id,
             "is_blocked_for_own_org": c.is_blocked_for_own_org or False,
+            "max_attempts": c.max_attempts or 0,
             "can_edit": _can_edit(c),
         }
         for c in contracts
@@ -326,6 +330,7 @@ async def get_contract_detail(
         "attachments": c.attachments or [],
         "contributing_org_id": c.contributing_org_id,
         "is_blocked_for_own_org": c.is_blocked_for_own_org or False,
+        "max_attempts": c.max_attempts or 0,
         "intel_drops": [
             {"content": d.content, "cost_bc": d.cost_bc}
             for d in drops
@@ -371,6 +376,8 @@ async def update_contract(
         contract.is_published = body.is_published
     if body.tags is not None:
         contract.tags = body.tags
+    if body.max_attempts is not None:
+        contract.max_attempts = max(0, body.max_attempts)
 
     # Replace intel drops if provided
     if body.intel_drops is not None:

@@ -62,6 +62,7 @@ class Contract(Base):
     flag = Column(String(500), nullable=False)
     is_published = Column(Boolean, default=False, nullable=False)
     is_void = Column(Boolean, default=False, server_default="false", nullable=False)
+    max_attempts = Column(Integer, default=0, server_default="0", nullable=False)
     attachments = Column(JSON, default=list, nullable=False)
     tags = Column(JSON, default=list, nullable=True)
     # Set when the first Operative claims this contract (drives decay + first blood)

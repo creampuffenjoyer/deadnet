@@ -291,6 +291,7 @@ async def get_contract(
         "first_blood_username": first_blood_username,
         "is_claimed_by_me": is_claimed_by_me,
         "my_attempt_count": my_attempt_count,
+        "max_attempts": contract.max_attempts or 0,
         "attachments": contract.attachments or [],
         "created_at": contract.created_at,
         "contributing_org_id": contract.contributing_org_id,
@@ -348,20 +349,6 @@ async def claim_contract(
             detail="Too many attempts. Wait before trying again.",
         )
 
-    # Enforce max_flag_attempts (0 = unlimited) — check DB counter
-    max_attempts_str = claim_cfg.get("max_flag_attempts", "0")
-    max_attempts = int(max_attempts_str) if max_attempts_str.isdigit() else 0
-    if max_attempts > 0:
-        att_row = await db.execute(
-            select(ContractAttempt.attempt_count).where(
-                ContractAttempt.operative_id == current_user.id,
-                ContractAttempt.contract_id == contract_id,
-            )
-        )
-        attempts_so_far = att_row.scalar_one_or_none() or 0
-        if attempts_so_far >= max_attempts:
-            raise HTTPException(status_code=429, detail="MAX_ATTEMPTS_REACHED")
-
     # Lock contract row to prevent race conditions on first_claimed_at
     result = await db.execute(
         select(Contract)
@@ -371,6 +358,17 @@ async def claim_contract(
     contract = result.scalar_one_or_none()
     if not contract:
         raise HTTPException(status_code=404, detail="Contract not found")
+
+    # Per-contract max attempts (0 = unlimited)
+    if (contract.max_attempts or 0) > 0:
+        att_row = await db.execute(
+            select(ContractAttempt.attempt_count).where(
+                ContractAttempt.operative_id == current_user.id,
+                ContractAttempt.contract_id == contract_id,
+            )
+        )
+        if (att_row.scalar_one_or_none() or 0) >= contract.max_attempts:
+            raise HTTPException(status_code=429, detail="MAX_ATTEMPTS_REACHED")
 
     # MAJOR events: block operatives from claiming their own org's contributed contracts
     active_event = (await _decay_context(db))[1]

@@ -836,6 +836,7 @@ END $$""",
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 )""",
+            "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS max_attempts INTEGER NOT NULL DEFAULT 0",
         ]:
             await conn.execute(text(stmt))
     from app.utils.architect import validate_architect_passwords
