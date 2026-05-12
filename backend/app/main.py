@@ -213,6 +213,9 @@ async def _seed():
         # Mock contracts — only if none exist yet
         contract_check = await db.execute(select(Contract).limit(1))
         if not contract_check.scalar_one_or_none():
+            _seed_ev = (await db.execute(
+                select(Event.id).where(Event.status == EventStatus.ACTIVE.value).order_by(Event.id.desc()).limit(1)
+            )).scalar_one_or_none() or 1
             for mc in _MOCK_CONTRACTS:
                 c = Contract(
                     title=mc["title"],
@@ -223,7 +226,7 @@ async def _seed():
                     flag=mc["flag"],
                     is_published=True,
                     attachments=[],
-                    event_id=1,
+                    event_id=_seed_ev,
                 )
                 db.add(c)
                 await db.flush()
@@ -306,9 +309,30 @@ async def _seed():
             await db.flush()
             print("[DEADNET] Seeded 4 VO1D contracts")
 
-        # Backfill event_id=1 on any pre-existing rows that have NULL event_id
+        # Backfill NULL event_ids with the current active event (fallback: 1)
+        _active_ev = (await db.execute(
+            select(Event.id).where(Event.status == EventStatus.ACTIVE.value).order_by(Event.id.desc()).limit(1)
+        )).scalar_one_or_none()
+        _backfill_eid = _active_ev or 1
         for tbl in ("contracts", "claims", "intel_purchases", "bc_events", "teams", "team_memberships"):
-            await db.execute(text(f"UPDATE {tbl} SET event_id = 1 WHERE event_id IS NULL"))
+            await db.execute(text(f"UPDATE {tbl} SET event_id = :eid WHERE event_id IS NULL"), {"eid": _backfill_eid})
+
+        # If the active event has no non-void contracts, migrate them from whichever
+        # event they currently belong to (handles the case where an operator switches
+        # from Event 1 → Event 2 but existing contracts still carry event_id=1).
+        if _active_ev:
+            _contract_cnt = (await db.execute(
+                select(func.count(Contract.id)).where(
+                    Contract.event_id == _active_ev,
+                    Contract.is_void == False,
+                )
+            )).scalar()
+            if not _contract_cnt:
+                _r = await db.execute(text(
+                    "UPDATE contracts SET event_id = :aid WHERE event_id != :aid AND is_void = false"
+                ), {"aid": _active_ev})
+                if _r.rowcount:
+                    print(f"[DEADNET] Auto-migrated {_r.rowcount} contract(s) to active event {_active_ev}")
 
         # Clean up ghost team memberships: members with no EventRegistration
         # for that event are pre-registration-system data (old event backfill).
