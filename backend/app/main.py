@@ -317,22 +317,15 @@ async def _seed():
         for tbl in ("contracts", "claims", "intel_purchases", "bc_events", "teams", "team_memberships"):
             await db.execute(text(f"UPDATE {tbl} SET event_id = :eid WHERE event_id IS NULL"), {"eid": _backfill_eid})
 
-        # If the active event has no non-void contracts, migrate them from whichever
-        # event they currently belong to (handles the case where an operator switches
-        # from Event 1 → Event 2 but existing contracts still carry event_id=1).
+        # Always migrate non-void contracts that are not on the active event.
+        # Handles switching from Event 1 → Event 2 regardless of whether a
+        # draft contract was already created on the new event.
         if _active_ev:
-            _contract_cnt = (await db.execute(
-                select(func.count(Contract.id)).where(
-                    Contract.event_id == _active_ev,
-                    Contract.is_void == False,
-                )
-            )).scalar()
-            if not _contract_cnt:
-                _r = await db.execute(text(
-                    "UPDATE contracts SET event_id = :aid WHERE event_id != :aid AND is_void = false"
-                ), {"aid": _active_ev})
-                if _r.rowcount:
-                    print(f"[DEADNET] Auto-migrated {_r.rowcount} contract(s) to active event {_active_ev}")
+            _r = await db.execute(text(
+                "UPDATE contracts SET event_id = :aid WHERE event_id != :aid AND is_void = false"
+            ), {"aid": _active_ev})
+            if _r.rowcount:
+                print(f"[DEADNET] Migrated {_r.rowcount} contract(s) to active event {_active_ev}")
 
         # Clean up ghost team memberships: members with no EventRegistration
         # for that event are pre-registration-system data (old event backfill).
