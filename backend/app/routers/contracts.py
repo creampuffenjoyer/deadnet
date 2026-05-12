@@ -104,6 +104,7 @@ async def list_contracts(
     )
 
     scope = get_organization_scope(current_user, org_id)
+    print(f"[DIAG] user={current_user.username} role={current_user.role.value} org_id={getattr(current_user,'org_id',None)} scope={scope} event_id={event_id} is_major={is_major_event}", flush=True)
     contract_q = (
         select(Contract)
         .where(Contract.is_published == True, Contract.event_id == event_id, Contract.is_void == False)
@@ -113,10 +114,12 @@ async def list_contracts(
         contract_q = contract_q.where(Contract.org_id == scope)
     result = await db.execute(contract_q)
     contracts = result.scalars().all()
+    print(f"[DIAG] pre-cat-filter={len(contracts)} allowed_categories={active_event.allowed_categories if active_event else None}", flush=True)
 
     # Filter by event's allowed_categories if set
     if active_event and active_event.allowed_categories:
         contracts = [c for c in contracts if str(c.category) in active_event.allowed_categories]
+    print(f"[DIAG] post-cat-filter={len(contracts)}", flush=True)
     decay_mode_out = (
         (active_event.decay_mode_override or decay_settings.get("decay_mode", "TIME_BASED"))
         if active_event else decay_settings.get("decay_mode", "TIME_BASED")
