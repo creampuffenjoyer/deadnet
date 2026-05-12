@@ -5,6 +5,7 @@ import Navbar from '../../components/ui/Navbar'
 import Footer from '../../components/ui/Footer'
 import Scanlines from '../../components/effects/Scanlines'
 import Badge from '../../components/ui/Badge'
+import { usePlatformFormat } from '../../hooks/usePlatformFormat'
 
 const ALL_CATEGORIES = [
   'Web', 'Cryptography', 'Forensics', 'Pwn', 'Misc', 'OSINT',
@@ -87,6 +88,10 @@ const EMPTY_FORM = {
 // ContractFormModal
 // ---------------------------------------------------------------------------
 function ContractFormModal({ contract, onClose, onSaved, onFileUploaded, events = [] }) {
+  const { allowed_file_types, max_upload_mb } = usePlatformFormat()
+  const fileAccept = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin')
+    .split(',').map(e => '.' + e.trim().replace(/^\./, '')).filter(Boolean).join(',')
+
   const [form, setForm] = useState(contract
     ? {
         title: contract.title,
@@ -456,7 +461,7 @@ function ContractFormModal({ contract, onClose, onSaved, onFileUploaded, events 
               <input
                 ref={fileRef}
                 type="file"
-                accept=".zip,.tar,.gz,.7z,.pdf,.txt,.bin,.elf,.exe,.o,.out,.py,.c,.cpp,.h,.js,.ts,.sh,.rb,.pl,.php,.java,.go,.rs,.pcap,.pcapng,.cap,.img,.iso,.png,.jpg,.jpeg,.gif,.bmp,.svg,.mp3,.wav,.json,.xml,.html,.md"
+                accept={fileAccept}
                 onChange={e => setUploadFile(e.target.files[0])}
                 className="font-mono text-xs text-ghost file:mr-2 file:font-mono file:text-xs file:text-ghost file:border file:border-ghost/20 file:bg-void file:rounded-sm file:px-2 file:py-0.5 file:cursor-pointer"
               />
@@ -623,6 +628,10 @@ function fmt_size(bytes) {
 }
 
 function CCTab() {
+  const { allowed_file_types, max_upload_mb } = usePlatformFormat()
+  const fileAccept = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin')
+    .split(',').map(e => '.' + e.trim().replace(/^\./, '')).filter(Boolean).join(',')
+
   const [ccList, setCcList] = useState([])
   const [form, setForm] = useState({ ...CC_EMPTY })
   const [stagedFile, setStagedFile] = useState(null)
@@ -850,12 +859,12 @@ function CCTab() {
                   onMouseLeave={e => e.currentTarget.style.borderColor = '#2A2A42'}
                 >
                   <span className="font-mono text-xs text-ghost/60 tracking-widest mb-1">[ UPLOAD CHALLENGE FILE ]</span>
-                  <span className="font-mono text-[10px] text-ghost/30">Max 50MB — zip, pcap, bin, pdf, png...</span>
+                  <span className="font-mono text-[10px] text-ghost/30">Max {max_upload_mb}MB — {(allowed_file_types || 'zip,pdf,txt,png,jpg,bin').split(',').slice(0,5).join(', ')}...</span>
                   <input
                     ref={fileInputRef}
                     type="file"
                     className="hidden"
-                    accept=".zip,.tar,.gz,.txt,.pdf,.png,.jpg,.jpeg,.pcap,.bin,.exe,.py,.js,.php"
+                    accept={fileAccept}
                     onChange={e => setStagedFile(e.target.files[0] || null)}
                   />
                 </label>
@@ -1076,6 +1085,10 @@ function ContractCard({ contract, onOpen, onTogglePublish, onDelete }) {
 // SlideOutPanel — inline edit panel sliding from the right
 // ---------------------------------------------------------------------------
 function SlideOutPanel({ contract, onClose, onSaved, onDelete, onFileUploaded }) {
+  const { allowed_file_types, max_upload_mb } = usePlatformFormat()
+  const fileAccept = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin')
+    .split(',').map(e => '.' + e.trim().replace(/^\./, '')).filter(Boolean).join(',')
+
   const isMajor = contract.is_blocked_for_own_org
   const canEdit = contract.can_edit !== false
 
@@ -1400,6 +1413,7 @@ function SlideOutPanel({ contract, onClose, onSaved, onDelete, onFileUploaded })
               <input
                 ref={fileRef}
                 type="file"
+                accept={fileAccept}
                 onChange={e => setUploadFile(e.target.files[0])}
                 className="font-mono text-xs text-ghost file:mr-2 file:font-mono file:text-xs file:text-ghost file:border file:border-ghost/20 file:bg-void file:rounded-sm file:px-2 file:py-0.5 file:cursor-pointer"
               />

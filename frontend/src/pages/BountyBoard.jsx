@@ -231,6 +231,17 @@ export default function BountyBoard() {
     )
   }
 
+  // Operative lock — board frozen
+  if (!loading && isFrozen && user?.role === 'OPERATIVE') {
+    return (
+      <div className="relative min-h-screen bg-void text-bone flex flex-col">
+        <Navbar />
+        <OfflineLock title="BOUNTY BOARD LOCKED" mode="frozen" />
+        <Footer />
+      </div>
+    )
+  }
+
   // Operative lock — removed from event
   if (!eventLoading && activeEvent && user?.role === 'OPERATIVE' && !regStatus.loading && regStatus.status === 'REMOVED') {
     return (
@@ -311,14 +322,14 @@ export default function BountyBoard() {
           )}
         </div>
 
-        {/* Freeze overlay */}
+        {/* Freeze indicator — admin/staff only (operatives see a full lockout screen instead) */}
         {isFrozen && (
           <div className="mb-4 border border-danger/50 bg-danger/10 rounded-sm px-4 py-3 flex items-center gap-3">
             <span className="font-mono text-sm text-danger font-bold tracking-widest animate-pulse">
-              ⚠ BOUNTY BOARD FROZEN
+              ⚠ BOARD FROZEN
             </span>
             <span className="font-mono text-xs text-ghost">
-              Rankings locked by Architect. Final standings displayed.
+              Operatives cannot see rankings. You have staff visibility.
             </span>
           </div>
         )}

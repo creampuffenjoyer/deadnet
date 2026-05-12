@@ -18,6 +18,8 @@ export function usePlatformFormat() {
   const [competition_active, setCompetitionActive] = useState(_cached?.competition_active ?? null)
   const [competition_manual_end, setCompetitionManualEnd] = useState(_cached?.competition_manual_end || null)
   const [competition_halted_by, setCompetitionHaltedBy] = useState(_cached?.competition_halted_by || null)
+  const [allowed_file_types, setAllowedFileTypes] = useState(_cached?.allowed_file_types || 'zip,pdf,txt,png,jpg,bin')
+  const [max_upload_mb, setMaxUploadMb] = useState(_cached?.max_upload_mb ?? 50)
 
   useEffect(() => {
     if (_cached) return
@@ -32,6 +34,8 @@ export function usePlatformFormat() {
         competition_active: r.data.competition_active || null,
         competition_manual_end: r.data.competition_manual_end || null,
         competition_halted_by: r.data.competition_halted_by || null,
+        allowed_file_types: r.data.allowed_file_types || 'zip,pdf,txt,png,jpg,bin',
+        max_upload_mb: r.data.max_upload_mb ?? 50,
       }
       setFormat(_cached.format)
       setShowSection(_cached.showSection)
@@ -42,10 +46,12 @@ export function usePlatformFormat() {
       setCompetitionActive(_cached.competition_active)
       setCompetitionManualEnd(_cached.competition_manual_end)
       setCompetitionHaltedBy(_cached.competition_halted_by)
+      setAllowedFileTypes(_cached.allowed_file_types)
+      setMaxUploadMb(_cached.max_upload_mb)
     }).catch(() => {})
   }, [])
 
-  return { format, showSection, max_flag_attempts, competition_start, competition_end, allow_solo, competition_active, competition_manual_end, competition_halted_by }
+  return { format, showSection, max_flag_attempts, competition_start, competition_end, allow_solo, competition_active, competition_manual_end, competition_halted_by, allowed_file_types, max_upload_mb }
 }
 
 /**

@@ -148,6 +148,15 @@ async def operative_board(
             "is_major": False, "orgs": [],
         }
 
+    # Frozen board: strip data for operatives so they can't peek via network tab
+    if frozen and not is_archive and _role == UserRole.OPERATIVE:
+        return {
+            "board": [], "is_frozen": True, "online_count": 0,
+            "event_id": target_sid, "state": ev_state,
+            "event_name": ev_name, "event_ends_at": ev_ends_at,
+            "is_major": False, "orgs": [],
+        }
+
     # Detect MAJOR event and build org map
     target_event = (await db.execute(
         select(Event).where(Event.id == target_sid)
@@ -326,6 +335,10 @@ async def team_board(
 ):
     frozen = await _is_frozen(db)
     target_sid = await _resolve_event(event_id, current_user, db)
+    current_sid = await get_current_event_id(db)
+    _role = getattr(current_user, 'role', None)
+    if frozen and target_sid == current_sid and _role == UserRole.OPERATIVE:
+        return {"board": [], "is_frozen": True, "event_id": target_sid}
 
     # All teams for this event
     scope = get_organization_scope(current_user, org_id)
@@ -435,6 +448,10 @@ async def org_board(
 ):
     frozen = await _is_frozen(db)
     target_sid = await _resolve_event(event_id, current_user, db)
+    current_sid = await get_current_event_id(db)
+    _role = getattr(current_user, 'role', None)
+    if frozen and target_sid == current_sid and _role == UserRole.OPERATIVE:
+        return {"board": [], "is_frozen": True, "event_id": target_sid, "is_major": False}
 
     target_event = (await db.execute(
         select(Event).where(Event.id == target_sid)

@@ -32,7 +32,7 @@ function fmtDate(iso) {
  *   title         — first line, e.g. "CONTRACT BOARD OFFLINE"
  *   lines         — additional static lines (for offline mode)
  *   upcoming      — upcoming event object (may be null)
- *   mode          — "offline" (default) | "not_registered" | "removed"
+ *   mode          — "offline" (default) | "not_registered" | "removed" | "frozen"
  *   activeEvent   — active event object (used for not_registered / removed modes)
  */
 export default function OfflineLock({ title, lines = [], upcoming, mode = 'offline', activeEvent }) {
@@ -81,6 +81,21 @@ export default function OfflineLock({ title, lines = [], upcoming, mode = 'offli
               Open a request →
             </Link>
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── FROZEN state ─────────────────────────────────────────────────────────
+  if (mode === 'frozen') {
+    return (
+      <div className="flex-1 flex items-center justify-center py-20 px-4">
+        <div className="font-mono text-sm space-y-1 max-w-md w-full">
+          <p style={{ color: '#FF2D2D' }}>&gt; {title}</p>
+          <p style={{ color: '#6B6B80' }}>&gt; Rankings withheld by Architect.</p>
+          <p style={{ color: '#6B6B80' }}>&gt; Final standings will be revealed shortly.</p>
+          <p style={{ color: '#6B6B80' }}>&gt;</p>
+          <p style={{ color: '#6B6B80' }}>&gt; Stand by, Operative.</p>
         </div>
       </div>
     )

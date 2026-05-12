@@ -32,6 +32,8 @@ _PUBLIC_KEYS = [
     "bounty_board_public",
     "void_mode_enabled",
     "platform_registration_locked",
+    "allowed_file_types",
+    "max_upload_mb",
 ]
 
 
@@ -67,6 +69,8 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
         "bounty_board_public": data.get("bounty_board_public", "false").lower() == "true",
         "void_mode_enabled": data.get("void_mode_enabled", "true").lower() == "true",
         "platform_registration_locked": data.get("platform_registration_locked", "false").lower() == "true",
+        "allowed_file_types": data.get("allowed_file_types", "zip,pdf,txt,png,jpg,bin"),
+        "max_upload_mb": int(data.get("max_upload_mb", "50") or "50"),
     }
 
 

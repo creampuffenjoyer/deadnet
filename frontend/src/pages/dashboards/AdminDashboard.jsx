@@ -311,13 +311,22 @@ function UserDetailPanel({ userId, onClose, onUpdate }) {
 
                   <div className="space-y-2">
                     {!detail.is_verified && (
-                      <button
-                        onClick={sendReminder}
-                        disabled={actionLoading === 'reminder'}
-                        className="w-full font-mono text-xs text-flare border border-flare/30 hover:border-flare px-3 py-2 rounded-sm tracking-widest transition-all disabled:opacity-50"
-                      >
-                        {actionLoading === 'reminder' ? 'SENDING...' : '[ SEND VERIFICATION REMINDER ]'}
-                      </button>
+                      <>
+                        <button
+                          onClick={verifyUser}
+                          disabled={!!actionLoading}
+                          className="w-full font-mono text-xs text-success border border-success/30 hover:border-success px-3 py-2 rounded-sm tracking-widest transition-all disabled:opacity-50"
+                        >
+                          {actionLoading === 'verify' ? 'VERIFYING...' : '[ VERIFY MANUALLY ]'}
+                        </button>
+                        <button
+                          onClick={sendReminder}
+                          disabled={actionLoading === 'reminder'}
+                          className="w-full font-mono text-xs text-flare border border-flare/30 hover:border-flare px-3 py-2 rounded-sm tracking-widest transition-all disabled:opacity-50"
+                        >
+                          {actionLoading === 'reminder' ? 'SENDING...' : '[ SEND VERIFICATION REMINDER ]'}
+                        </button>
+                      </>
                     )}
                     <button
                       onClick={forceLogout}
