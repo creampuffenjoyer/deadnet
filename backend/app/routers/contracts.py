@@ -104,7 +104,6 @@ async def list_contracts(
     )
 
     scope = get_organization_scope(current_user, org_id)
-    print(f"[DEBUG /contracts/] user={current_user.username} role={current_user.role} org_id={scope} event_id={event_id} is_major={is_major_event}", flush=True)
     contract_q = (
         select(Contract)
         .where(Contract.is_published == True, Contract.event_id == event_id, Contract.is_void == False)
@@ -114,7 +113,6 @@ async def list_contracts(
         contract_q = contract_q.where(Contract.org_id == scope)
     result = await db.execute(contract_q)
     contracts = result.scalars().all()
-    print(f"[DEBUG /contracts/] found={len(contracts)} after org filter", flush=True)
 
     # Filter by event's allowed_categories if set
     if active_event and active_event.allowed_categories:
