@@ -81,7 +81,7 @@ export default function ContractModal({ contract, onClose, onClaimed, isReadOnly
 
   const isOperative = user?.role === 'OPERATIVE'
   const myAttempts = detail?.my_attempt_count ?? 0
-  const maxAttempts = max_flag_attempts ?? 0
+  const maxAttempts = detail?.max_attempts ?? 0
   const attemptsExhausted = maxAttempts > 0 && myAttempts >= maxAttempts
 
   const fetchDetail = useCallback(() => {
@@ -240,6 +240,11 @@ export default function ContractModal({ contract, onClose, onClaimed, isReadOnly
                 )}
               </div>
               <h2 className="font-ui font-bold text-xl text-bone">{c.title}</h2>
+              {detail?.created_by_username && (
+                <span className="font-mono text-[10px] text-ghost tracking-widest">
+                  BY: {detail.created_by_username}
+                </span>
+              )}
             </div>
             <button
               onClick={onClose}

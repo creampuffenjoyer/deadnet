@@ -266,6 +266,14 @@ async def get_contract(
         )
         first_blood_username = fb_row.scalar_one_or_none()
 
+    # Creator username
+    created_by_username = None
+    if contract.created_by:
+        cb_row = await db.execute(
+            select(User.username).where(User.id == contract.created_by)
+        )
+        created_by_username = cb_row.scalar_one_or_none()
+
     cur_bc = get_current_bc(contract.base_bc_value, active_event, decay_settings, paused_secs, contract.first_claimed_at)
     next_at, next_bc = get_next_decay_info(contract.base_bc_value, active_event, decay_settings, paused_secs, contract.first_claimed_at)
     decay_mode_out = (
@@ -296,6 +304,7 @@ async def get_contract(
         "created_at": contract.created_at,
         "contributing_org_id": contract.contributing_org_id,
         "is_blocked_for_own_org": contract.is_blocked_for_own_org or False,
+        "created_by_username": created_by_username,
     }
 
 
