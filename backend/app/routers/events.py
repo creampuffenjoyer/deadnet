@@ -1286,8 +1286,8 @@ async def export_event(
         "event": _event_out(e),
         "contracts": [
             {
-                "id": str(c.id), "title": c.title, "category": str(c.category),
-                "rarity": str(c.rarity), "base_bc_value": c.base_bc_value,
+                "id": str(c.id), "title": c.title, "category": c.category.value,
+                "rarity": c.rarity.value, "base_bc_value": c.base_bc_value,
                 "is_published": c.is_published,
                 "first_claimed_at": c.first_claimed_at.isoformat() if c.first_claimed_at else None,
                 "created_at": c.created_at.isoformat(),

@@ -115,10 +115,11 @@ async def list_contracts(
     contracts = result.scalars().all()
 
     # Filter by event's allowed_categories if set.
-    # Normalize to uppercase so "Web" and "WEB" both match the enum value "WEB".
+    # Use .value (the stored string e.g. "Web") rather than str() which returns
+    # "ContractCategory.WEB" in Python 3.12 and would never match.
     if active_event and active_event.allowed_categories:
-        _allowed = {cat.upper() for cat in active_event.allowed_categories}
-        contracts = [c for c in contracts if str(c.category).upper() in _allowed]
+        _allowed = set(active_event.allowed_categories)
+        contracts = [c for c in contracts if c.category.value in _allowed]
     decay_mode_out = (
         (active_event.decay_mode_override or decay_settings.get("decay_mode", "TIME_BASED"))
         if active_event else decay_settings.get("decay_mode", "TIME_BASED")
