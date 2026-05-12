@@ -154,9 +154,13 @@ export default function Landing() {
               )}
             </>
           ) : (
-            <p className="font-mono text-xs text-ghost tracking-widest uppercase">
-              DEADNET GOES LIVE SOON
-            </p>
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-success animate-pulse" />
+              <span className="font-mono text-success text-sm tracking-widest uppercase font-bold"
+                style={{ textShadow: '0 0 10px #00FF88, 0 0 20px #00FF88' }}>
+                DEADNET IS LIVE
+              </span>
+            </div>
           )}
         </motion.div>
 
