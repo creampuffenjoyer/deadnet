@@ -70,19 +70,8 @@ async def _can_edit_contract(
     contractor_org_id: Optional[int],
 ) -> bool:
     """Return True if this contractor may edit/delete/publish the given contract."""
-    if not contract.event_id:
-        return True  # no event — no restriction
-    event = (await db.execute(
-        select(Event).where(Event.id == contract.event_id)
-    )).scalar_one_or_none()
-    if not event or (event.event_type or "LOCAL") != "MAJOR":
-        return True  # LOCAL event — no restriction
     if contractor_org_id is None:
         return False
-    # MAJOR event: host org has full access
-    if event.host_org_id == contractor_org_id:
-        return True
-    # Borrowed contractor: only their own contributed challenges
     return contract.contributing_org_id == contractor_org_id
 
 
@@ -265,11 +254,7 @@ async def list_all_contracts(
     drop_counts = {str(r[0]): r[1] for r in drop_counts_result.all()}
 
     def _can_edit(c: Contract) -> bool:
-        if not cur_event or (cur_event.event_type or "LOCAL") != "MAJOR":
-            return True  # LOCAL event — no restriction
-        if is_host_contractor:
-            return True  # host contractor: full access
-        return c.contributing_org_id == contractor_org_id  # borrowed: own only
+        return c.contributing_org_id == contractor_org_id
 
     return [
         {
