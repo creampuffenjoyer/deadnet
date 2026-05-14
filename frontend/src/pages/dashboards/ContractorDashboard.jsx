@@ -1853,6 +1853,7 @@ export default function ContractorDashboard() {
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null)         // null | { mode: 'create' }
   const [flagVariants, setFlagVariants] = useState(null)
+  const [boardContracts, setBoardContracts] = useState([])
   const [txContent, setTxContent] = useState('')
   const [txSending, setTxSending] = useState(false)
   const [txError, setTxError] = useState('')
@@ -1866,6 +1867,13 @@ export default function ContractorDashboard() {
   async function loadContracts() {
     const res = await client.get('/contractor/contracts')
     setContracts(res.data)
+  }
+
+  async function loadBoard() {
+    try {
+      const res = await client.get('/contractor/board')
+      setBoardContracts(res.data)
+    } catch { /* ignore */ }
   }
 
   async function loadEvents() {
@@ -1883,6 +1891,7 @@ export default function ContractorDashboard() {
   useEffect(() => {
     Promise.all([
       loadContracts(),
+      loadBoard(),
       loadEvents(),
       loadTransmissions(),
       client.get('/operatives/').then(r => setOperatives(r.data)).catch(() => {}),
@@ -1955,7 +1964,7 @@ export default function ContractorDashboard() {
   }
 
   const published = contracts.filter(c => c.is_published).length
-  const drafts = contracts.filter(c => !c.is_published).length
+  const drafts    = contracts.filter(c => !c.is_published).length
 
   return (
     <div className="relative min-h-screen bg-void text-bone flex flex-col">
@@ -2006,7 +2015,7 @@ export default function ContractorDashboard() {
 
         {/* Tab bar */}
         <div className="flex border-b border-ghost/20 mb-6">
-          {[['contracts', 'CONTRACTS'], ['cc', 'EMERGENCY CONTRACTS'], ['transmissions', 'TRANSMISSIONS']].map(([key, label]) => (
+          {[['contracts', 'CONTRACTS'], ['board', 'CONTRACT BOARD'], ['cc', 'EMERGENCY CONTRACTS'], ['transmissions', 'TRANSMISSIONS']].map(([key, label]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
@@ -2029,6 +2038,9 @@ export default function ContractorDashboard() {
             onNewContract={() => { setFlagVariants(null); setModal({ mode: 'create' }) }}
           />
         )}
+
+        {/* CONTRACT BOARD TAB */}
+        {tab === 'board' && <BoardTab contracts={boardContracts} />}
 
         {/* EMERGENCY CONTRACTS TAB */}
         {tab === 'cc' && <CCTab />}
@@ -2180,6 +2192,148 @@ export default function ContractorDashboard() {
       </div>
 
       <Footer />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// BoardTab — read-only view of all published contracts in the event
+// ---------------------------------------------------------------------------
+function BoardTab({ contracts }) {
+  const [filterOrg, setFilterOrg]           = useState('ALL')
+  const [filterCategory, setFilterCategory] = useState('ALL')
+  const [sortBy, setSortBy]                 = useState('rarity')
+
+  const orgs = useMemo(() => {
+    const seen = new Map()
+    contracts.forEach(c => {
+      if (c.org_id != null && !seen.has(c.org_id)) seen.set(c.org_id, c.org_name || '—')
+    })
+    return [...seen.entries()].map(([id, name]) => ({ id, name }))
+  }, [contracts])
+
+  const availableCategories = useMemo(
+    () => [...new Set(contracts.map(c => c.category))].sort(),
+    [contracts]
+  )
+
+  const filtered = useMemo(() => {
+    let result = contracts
+    if (filterOrg !== 'ALL')      result = result.filter(c => String(c.org_id) === filterOrg)
+    if (filterCategory !== 'ALL') result = result.filter(c => c.category === filterCategory)
+    const copy = [...result]
+    switch (sortBy) {
+      case 'rarity':  copy.sort((a, b) => (RARITY_TIER[a.rarity] ?? 99) - (RARITY_TIER[b.rarity] ?? 99)); break
+      case 'bc_high': copy.sort((a, b) => b.base_bc_value - a.base_bc_value); break
+      case 'bc_low':  copy.sort((a, b) => a.base_bc_value - b.base_bc_value); break
+      case 'title':   copy.sort((a, b) => a.title.localeCompare(b.title)); break
+      default: break
+    }
+    return copy
+  }, [contracts, filterOrg, filterCategory, sortBy])
+
+  return (
+    <div>
+      {orgs.length > 1 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button
+            onClick={() => setFilterOrg('ALL')}
+            className={`font-mono text-[10px] px-3 py-1 rounded-sm tracking-widest border transition-all ${
+              filterOrg === 'ALL'
+                ? 'border-ember text-ember bg-ember/10'
+                : 'border-ghost/30 text-ghost hover:border-ghost/60 hover:text-bone'
+            }`}
+          >
+            ALL ORGS
+          </button>
+          {orgs.map(o => (
+            <button
+              key={o.id}
+              onClick={() => setFilterOrg(String(o.id))}
+              className={`font-mono text-[10px] px-3 py-1 rounded-sm tracking-widest border transition-all ${
+                filterOrg === String(o.id)
+                  ? 'border-ember text-ember bg-ember/10'
+                  : 'border-ghost/30 text-ghost hover:border-ghost/60 hover:text-bone'
+              }`}
+            >
+              {o.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <select
+          value={filterCategory}
+          onChange={e => setFilterCategory(e.target.value)}
+          className="bg-abyss border border-ghost/20 rounded-sm px-3 py-1.5 font-mono text-xs text-ghost focus:outline-none focus:border-ember"
+        >
+          <option value="ALL">ALL CATEGORIES</option>
+          {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select
+          value={sortBy}
+          onChange={e => setSortBy(e.target.value)}
+          className="bg-abyss border border-ghost/20 rounded-sm px-3 py-1.5 font-mono text-xs text-ghost focus:outline-none focus:border-ember"
+        >
+          <option value="rarity">SORT: RARITY</option>
+          <option value="bc_high">SORT: BC HIGH→LOW</option>
+          <option value="bc_low">SORT: BC LOW→HIGH</option>
+          <option value="title">SORT: TITLE</option>
+        </select>
+        <span className="font-mono text-[10px] text-ghost/50 ml-auto">
+          {filtered.length} CONTRACT{filtered.length !== 1 ? 'S' : ''}
+        </span>
+      </div>
+
+      <div className="mb-5 border border-ghost/10 bg-ghost/5 rounded-sm px-3 py-2">
+        <p className="font-mono text-[10px] text-ghost/50 tracking-widest">
+          READ-ONLY — All published contracts in this event. Flags and editing are not available here.
+        </p>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="text-center py-16">
+          <p className="font-mono text-xs text-ghost tracking-widest">NO PUBLISHED CONTRACTS</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filtered.map(c => {
+            const cfg = RARITY_CONFIG[c.rarity] || RARITY_CONFIG.COMMON
+            return (
+              <div key={c.id} className={`border ${cfg.border} bg-abyss rounded-sm p-4 flex flex-col gap-2`}>
+                <div className="flex items-start justify-between gap-2">
+                  <span className={`font-mono text-sm font-bold ${cfg.text} leading-tight`}>{c.title}</span>
+                  <span className={`font-mono text-[9px] tracking-widest shrink-0 ${cfg.text} opacity-60`}>{c.rarity}</span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-[10px] text-ghost border border-ghost/20 rounded-sm px-1.5 py-0.5">
+                    {c.category}
+                  </span>
+                  {c.org_name && c.org_name !== '—' && (
+                    <span className="font-mono text-[10px] text-flare/80 border border-flare/20 rounded-sm px-1.5 py-0.5">
+                      {c.org_name}
+                    </span>
+                  )}
+                </div>
+                {c.tags?.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {c.tags.map(t => (
+                      <span key={t} className="font-mono text-[9px] text-ghost/50 bg-ghost/5 border border-ghost/10 rounded-sm px-1">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center justify-between mt-auto pt-2 border-t border-ghost/10">
+                  <span className="font-mono text-xs text-ember font-bold">{c.current_bc_value} BC</span>
+                  <span className="font-mono text-[10px] text-ghost">{c.claim_count} SOLVED</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

@@ -12,12 +12,12 @@ from app.deps import require_contractor
 from app.models.contract import Claim, Contract, ContractCategory, ContractRarity, IntelDrop
 from app.models.event import Event
 from app.models.major_event import MajorEventContractor
+from app.models.organization import Organization
 from app.models.user import User
 from app.utils.decay import get_current_bc, get_next_decay_info
 from app.models.settings import PlatformSettings
 from app.redis_client import get_halt_started, get_paused_seconds
 from app.utils.event import get_active_event, get_current_event_id
-from app.utils.roles import get_organization_scope
 
 router = APIRouter()
 
@@ -211,25 +211,15 @@ async def list_all_contracts(
     event_id = await get_current_event_id(db)
     contractor_org_id = getattr(current_user, "org_id", None)
 
-    # Determine if this contractor is a host of the current MAJOR event
-    is_host_contractor = False
-    cur_event = None
-    if event_id:
-        cur_event = (await db.execute(
-            select(Event).where(Event.id == event_id)
-        )).scalar_one_or_none()
-        if cur_event and (cur_event.event_type or "LOCAL") == "MAJOR":
-            is_host_contractor = (cur_event.host_org_id == contractor_org_id)
-
-    scope = get_organization_scope(current_user, org_id)
     sup_q = (
         select(Contract)
-        .where(Contract.event_id == event_id, Contract.is_void == False)
+        .where(
+            Contract.event_id == event_id,
+            Contract.is_void == False,
+            Contract.contributing_org_id == contractor_org_id,
+        )
         .order_by(Contract.category, Contract.rarity, Contract.title)
     )
-    # Host contractor of a MAJOR event sees ALL contracts; others see own org only
-    if not is_host_contractor and scope is not None:
-        sup_q = sup_q.where(Contract.org_id == scope)
     result = await db.execute(sup_q)
     contracts = result.scalars().all()
 
@@ -290,10 +280,13 @@ async def get_contract_detail(
     current_user: User = Depends(require_contractor),
     db: AsyncSession = Depends(get_db),
 ):
+    contractor_org_id = getattr(current_user, "org_id", None)
     result = await db.execute(select(Contract).where(Contract.id == contract_id))
     c = result.scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Contract not found")
+    if c.contributing_org_id != contractor_org_id:
+        raise HTTPException(status_code=403, detail="ACCESS_DENIED")
 
     drops_result = await db.execute(
         select(IntelDrop)
@@ -431,3 +424,58 @@ async def delete_contract(
 
     await db.delete(contract)
     await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# GET /contractor/board  — read-only view of all published contracts in event
+# ---------------------------------------------------------------------------
+
+@router.get("/board")
+async def get_board(
+    current_user: User = Depends(require_contractor),
+    db: AsyncSession = Depends(get_db),
+):
+    event_id = await get_current_event_id(db)
+
+    rows = (await db.execute(
+        select(Contract, Organization)
+        .outerjoin(Organization, Organization.id == Contract.org_id)
+        .where(
+            Contract.event_id == event_id,
+            Contract.is_void == False,
+            Contract.is_published == True,
+        )
+        .order_by(Contract.org_id, Contract.category, Contract.rarity, Contract.title)
+    )).all()
+
+    decay_settings_raw = await _get_decay_settings(db)
+    active_event = await get_active_event(db)
+    paused_secs = 0.0
+    if active_event:
+        paused_secs = await get_paused_seconds(active_event.id)
+        halt_at = await get_halt_started(active_event.id)
+        if halt_at is not None:
+            paused_secs += time.time() - halt_at
+
+    counts = {
+        str(r[0]): r[1]
+        for r in (await db.execute(
+            select(Claim.contract_id, func.count(Claim.id)).group_by(Claim.contract_id)
+        )).all()
+    }
+
+    return [
+        {
+            "id": str(c.id),
+            "title": c.title,
+            "category": c.category,
+            "rarity": c.rarity,
+            "base_bc_value": c.base_bc_value,
+            "current_bc_value": get_current_bc(c.base_bc_value, active_event, decay_settings_raw, paused_secs, c.first_claimed_at),
+            "tags": c.tags or [],
+            "claim_count": counts.get(str(c.id), 0),
+            "org_id": c.org_id,
+            "org_name": org.name if org else "—",
+        }
+        for c, org in rows
+    ]
