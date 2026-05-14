@@ -2320,6 +2320,7 @@ function BoardTab({ contracts, onView }) {
   const [filterOrg, setFilterOrg]           = useState('ALL')
   const [filterCategory, setFilterCategory] = useState('ALL')
   const [sortBy, setSortBy]                 = useState('rarity')
+  const [page, setPage]                     = useState(1)
 
   const orgs = useMemo(() => {
     const seen = new Map()
@@ -2348,6 +2349,11 @@ function BoardTab({ contracts, onView }) {
     }
     return copy
   }, [contracts, filterOrg, filterCategory, sortBy])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  useEffect(() => { setPage(1) }, [filterOrg, filterCategory, sortBy])
 
   return (
     <div>
@@ -2415,7 +2421,7 @@ function BoardTab({ contracts, onView }) {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map(c => {
+          {paginated.map(c => {
             const cfg = RARITY_CONFIG[c.rarity] || RARITY_CONFIG.COMMON
             return (
               <div
@@ -2458,6 +2464,26 @@ function BoardTab({ contracts, onView }) {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-4 mt-6">
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="font-mono text-xs text-ghost border border-ghost/20 px-3 py-1.5 rounded-sm hover:border-ghost transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            ← PREV
+          </button>
+          <span className="font-mono text-xs text-ghost">{page} / {totalPages}</span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+            className="font-mono text-xs text-ghost border border-ghost/20 px-3 py-1.5 rounded-sm hover:border-ghost transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            NEXT →
+          </button>
         </div>
       )}
     </div>
