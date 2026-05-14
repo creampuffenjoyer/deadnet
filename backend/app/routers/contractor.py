@@ -423,9 +423,17 @@ async def get_board(
 ):
     event_id = await get_current_event_id(db)
 
+    # Resolve event type (MAJOR vs LOCAL)
+    event_type = "LOCAL"
+    if event_id:
+        ev = (await db.execute(select(Event).where(Event.id == event_id))).scalar_one_or_none()
+        if ev:
+            event_type = ev.event_type or "LOCAL"
+
     rows = (await db.execute(
-        select(Contract, Organization)
+        select(Contract, Organization, User)
         .outerjoin(Organization, Organization.id == Contract.org_id)
+        .outerjoin(User, User.id == Contract.created_by)
         .where(
             Contract.event_id == event_id,
             Contract.is_void == False,
@@ -471,6 +479,8 @@ async def get_board(
             "intel_drop_count": drop_counts.get(str(c.id), 0),
             "org_id": c.org_id,
             "org_name": org.name if org else "—",
+            "created_by_username": creator.username if creator else "—",
+            "event_type": event_type,
         }
-        for c, org in rows
+        for c, org, creator in rows
     ]

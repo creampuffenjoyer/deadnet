@@ -2209,31 +2209,74 @@ export default function ContractorDashboard() {
 // ---------------------------------------------------------------------------
 function BoardContractModal({ contract, onClose }) {
   const cfg = RARITY_CONFIG[contract.rarity] || RARITY_CONFIG.COMMON
+  const isMajor = contract.event_type === 'MAJOR'
+
+  // ESC to close
+  useEffect(() => {
+    function handleKey(e) { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onClose])
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-void/90 overflow-y-auto py-8 px-4">
-      <div className="w-full max-w-2xl border border-ghost/30 bg-abyss rounded-sm">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-ghost/20">
-          <div className="flex items-center gap-3">
+    // Backdrop — click outside to close
+    <div
+      className="fixed inset-0 z-[999] flex items-center justify-center bg-void/90 px-4"
+      onClick={onClose}
+    >
+      {/* Modal card — stop propagation so clicking inside doesn't close */}
+      <div
+        className="w-full max-w-2xl border border-ghost/30 bg-abyss rounded-sm max-h-[85vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-ghost/20 shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className={`font-mono text-xs tracking-widest ${cfg.text}`}>{contract.rarity}</span>
-            <span className="font-mono text-xs text-ghost">—</span>
+            <span className="font-mono text-xs text-ghost/40">·</span>
             <span className="font-mono text-xs text-ghost tracking-widest">{contract.category}</span>
-            {contract.org_name && contract.org_name !== '—' && (
+            {isMajor && contract.org_name && contract.org_name !== '—' && (
               <>
-                <span className="font-mono text-xs text-ghost">—</span>
+                <span className="font-mono text-xs text-ghost/40">·</span>
                 <span className="font-mono text-xs text-flare/80 tracking-widest">{contract.org_name}</span>
               </>
             )}
           </div>
-          <button onClick={onClose} className="font-mono text-ghost hover:text-ember text-xs">✕ CLOSE</button>
+          <button
+            onClick={onClose}
+            className="font-mono text-sm text-ghost hover:text-ember border border-ghost/20 hover:border-ember/40 rounded-sm px-3 py-1 tracking-widest transition-colors shrink-0 ml-4"
+          >
+            ✕ CLOSE
+          </button>
         </div>
 
-        <div className="px-6 py-5 space-y-5">
+        {/* Scrollable body */}
+        <div className="px-6 py-5 space-y-5 overflow-y-auto">
           <h2 className={`font-mono font-bold text-xl ${cfg.text}`}>{contract.title}</h2>
 
-          <div className="flex items-center gap-4 flex-wrap">
+          {/* Creator + org */}
+          <div className="flex items-center gap-4 text-xs font-mono flex-wrap">
+            {contract.created_by_username && contract.created_by_username !== '—' && (
+              <span className="text-ghost/70">
+                BY <span className="text-bone">{contract.created_by_username}</span>
+              </span>
+            )}
+            {isMajor && contract.org_name && contract.org_name !== '—' && (
+              <span className="text-ghost/70">
+                ORG <span className="text-flare/80">{contract.org_name}</span>
+              </span>
+            )}
+          </div>
+
+          {/* Stats */}
+          <div className="flex items-center gap-3 flex-wrap">
             <div className="border border-ghost/20 rounded-sm px-3 py-2 text-center">
               <div className="font-mono font-bold text-lg text-ember">{contract.current_bc_value}</div>
               <div className="font-mono text-[10px] text-ghost tracking-widest">CURRENT BC</div>
+            </div>
+            <div className="border border-ghost/20 rounded-sm px-3 py-2 text-center">
+              <div className="font-mono font-bold text-lg text-bone">{contract.base_bc_value}</div>
+              <div className="font-mono text-[10px] text-ghost tracking-widest">BASE BC</div>
             </div>
             <div className="border border-ghost/20 rounded-sm px-3 py-2 text-center">
               <div className="font-mono font-bold text-lg text-bone">{contract.claim_count}</div>
@@ -2248,7 +2291,7 @@ function BoardContractModal({ contract, onClose }) {
           {contract.tags?.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {contract.tags.map(t => (
-                <span key={t} className="font-mono text-[10px] text-ghost/60 bg-ghost/5 border border-ghost/15 rounded-sm px-2 py-0.5">{t}</span>
+                <span key={t} className="font-mono text-[10px] text-ghost/60 bg-ghost/5 border border-ghost/10 rounded-sm px-2 py-0.5">{t}</span>
               ))}
             </div>
           )}
@@ -2265,7 +2308,7 @@ function BoardContractModal({ contract, onClose }) {
           )}
 
           <div className="border border-ghost/10 bg-ghost/5 rounded-sm px-3 py-2">
-            <p className="font-mono text-[10px] text-ghost/50 tracking-widest">READ-ONLY VIEW — Flag not visible here.</p>
+            <p className="font-mono text-[10px] text-ghost/50 tracking-widest">READ-ONLY — Flag not visible here. Click outside or press ESC to close.</p>
           </div>
         </div>
       </div>
