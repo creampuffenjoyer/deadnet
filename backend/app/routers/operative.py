@@ -12,6 +12,7 @@ from app.models.settings import PlatformSettings
 from app.models.team import Team, TeamMembership
 from app.models.user import User, UserRole
 from app.routers.organizations import validate_organization_active
+from app.utils.architect import load_architects
 from app.utils.clearance import get_clearance_level
 from app.utils.event import get_current_event_id
 
@@ -298,6 +299,9 @@ async def update_profile(
             raise HTTPException(status_code=400, detail="CALLSIGN_TOO_SHORT")
         if not re.match(r"^[a-zA-Z0-9_\-]+$", new_username):
             raise HTTPException(status_code=400, detail="CALLSIGN_INVALID")
+        _arch_callsigns = {a["callsign"] for a in load_architects()}
+        if new_username in _arch_callsigns:
+            raise HTTPException(status_code=400, detail="CALLSIGN_TAKEN")
         if new_username != current_user.username:
             existing = await db.execute(select(User).where(User.username == new_username))
             if existing.scalar_one_or_none():

@@ -56,6 +56,7 @@ from app.utils.jwt_utils import (
     create_refresh_token,
     decode_token,
 )
+from app.utils.architect import load_architects
 from app.routers.organizations import validate_organization_active
 from app.utils.roles import get_organization_scope
 from app.utils.security import constant_time_compare, hash_password, verify_password
@@ -114,6 +115,9 @@ async def register(
         raise HTTPException(status_code=403, detail="ENLISTMENT_CLOSED")
 
     # Username uniqueness — OK to reveal (callsigns are public)
+    _arch_callsigns = {a["callsign"] for a in load_architects()}
+    if body.username in _arch_callsigns:
+        raise HTTPException(status_code=400, detail="CALLSIGN_TAKEN")
     if (await db.execute(select(User).where(User.username == body.username))).scalar_one_or_none():
         raise HTTPException(status_code=400, detail="CALLSIGN_TAKEN")
 
@@ -178,6 +182,9 @@ async def _register_staff(
     # Callsign validation
     if not _USERNAME_RE.match(body.callsign):
         raise HTTPException(status_code=400, detail="CALLSIGN_INVALID")
+    _arch_callsigns = {a["callsign"] for a in load_architects()}
+    if body.callsign in _arch_callsigns:
+        raise HTTPException(status_code=400, detail="CALLSIGN_TAKEN")
     if (await db.execute(select(User).where(User.username == body.callsign))).scalar_one_or_none():
         raise HTTPException(status_code=400, detail="CALLSIGN_TAKEN")
 
