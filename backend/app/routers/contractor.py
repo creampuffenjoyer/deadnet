@@ -457,10 +457,17 @@ async def get_board(
         if halt_at is not None:
             paused_secs += time.time() - halt_at
 
-    counts = {
+    claim_counts = {
         str(r[0]): r[1]
         for r in (await db.execute(
             select(Claim.contract_id, func.count(Claim.id)).group_by(Claim.contract_id)
+        )).all()
+    }
+
+    drop_counts = {
+        str(r[0]): r[1]
+        for r in (await db.execute(
+            select(IntelDrop.contract_id, func.count(IntelDrop.id)).group_by(IntelDrop.contract_id)
         )).all()
     }
 
@@ -468,12 +475,14 @@ async def get_board(
         {
             "id": str(c.id),
             "title": c.title,
+            "description": c.description or "",
             "category": c.category,
             "rarity": c.rarity,
             "base_bc_value": c.base_bc_value,
             "current_bc_value": get_current_bc(c.base_bc_value, active_event, decay_settings_raw, paused_secs, c.first_claimed_at),
             "tags": c.tags or [],
-            "claim_count": counts.get(str(c.id), 0),
+            "claim_count": claim_counts.get(str(c.id), 0),
+            "intel_drop_count": drop_counts.get(str(c.id), 0),
             "org_id": c.org_id,
             "org_name": org.name if org else "—",
         }
