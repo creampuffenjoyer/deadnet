@@ -64,15 +64,9 @@ async def _get_decay_settings(db: AsyncSession) -> dict:
     return {row.key: row.value for row in result.scalars().all()}
 
 
-async def _can_edit_contract(
-    db: AsyncSession,
-    contract: Contract,
-    contractor_org_id: Optional[int],
-) -> bool:
-    """Return True if this contractor may edit/delete/publish the given contract."""
-    if contractor_org_id is None:
-        return False
-    return contract.contributing_org_id == contractor_org_id
+def _can_edit_contract(contract: Contract, user_id) -> bool:
+    """Return True if this contractor created this contract."""
+    return contract.created_by is not None and str(contract.created_by) == str(user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +210,7 @@ async def list_all_contracts(
         .where(
             Contract.event_id == event_id,
             Contract.is_void == False,
-            Contract.contributing_org_id == contractor_org_id,
+            Contract.created_by == current_user.id,
         )
         .order_by(Contract.category, Contract.rarity, Contract.title)
     )
@@ -237,14 +231,10 @@ async def list_all_contracts(
     )
     claim_counts = {str(r[0]): r[1] for r in counts_result.all()}
 
-    # Intel drop counts per contract
     drop_counts_result = await db.execute(
         select(IntelDrop.contract_id, func.count(IntelDrop.id)).group_by(IntelDrop.contract_id)
     )
     drop_counts = {str(r[0]): r[1] for r in drop_counts_result.all()}
-
-    def _can_edit(c: Contract) -> bool:
-        return c.contributing_org_id == contractor_org_id
 
     return [
         {
@@ -264,7 +254,7 @@ async def list_all_contracts(
             "contributing_org_id": c.contributing_org_id,
             "is_blocked_for_own_org": c.is_blocked_for_own_org or False,
             "max_attempts": c.max_attempts or 0,
-            "can_edit": _can_edit(c),
+            "can_edit": True,
         }
         for c in contracts
     ]
@@ -280,12 +270,11 @@ async def get_contract_detail(
     current_user: User = Depends(require_contractor),
     db: AsyncSession = Depends(get_db),
 ):
-    contractor_org_id = getattr(current_user, "org_id", None)
     result = await db.execute(select(Contract).where(Contract.id == contract_id))
     c = result.scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Contract not found")
-    if c.contributing_org_id != contractor_org_id:
+    if not _can_edit_contract(c, current_user.id):
         raise HTTPException(status_code=403, detail="ACCESS_DENIED")
 
     drops_result = await db.execute(
@@ -334,8 +323,7 @@ async def update_contract(
     if not contract:
         raise HTTPException(status_code=404, detail="Contract not found")
 
-    contractor_org_id = getattr(current_user, "org_id", None)
-    if not await _can_edit_contract(db, contract, contractor_org_id):
+    if not _can_edit_contract(contract, current_user.id):
         raise HTTPException(status_code=403, detail="CANNOT_EDIT_OTHER_ORG_CONTRACT")
 
     if body.title is not None:
@@ -394,8 +382,7 @@ async def toggle_publish(
     if not contract:
         raise HTTPException(status_code=404, detail="Contract not found")
 
-    contractor_org_id = getattr(current_user, "org_id", None)
-    if not await _can_edit_contract(db, contract, contractor_org_id):
+    if not _can_edit_contract(contract, current_user.id):
         raise HTTPException(status_code=403, detail="CANNOT_EDIT_OTHER_ORG_CONTRACT")
 
     contract.is_published = not contract.is_published
@@ -418,8 +405,7 @@ async def delete_contract(
     if not contract:
         raise HTTPException(status_code=404, detail="Contract not found")
 
-    contractor_org_id = getattr(current_user, "org_id", None)
-    if not await _can_edit_contract(db, contract, contractor_org_id):
+    if not _can_edit_contract(contract, current_user.id):
         raise HTTPException(status_code=403, detail="CANNOT_DELETE_OTHER_ORG_CONTRACT")
 
     await db.delete(contract)

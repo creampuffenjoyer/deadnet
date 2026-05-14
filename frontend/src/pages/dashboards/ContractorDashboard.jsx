@@ -1854,6 +1854,7 @@ export default function ContractorDashboard() {
   const [modal, setModal] = useState(null)         // null | { mode: 'create' }
   const [flagVariants, setFlagVariants] = useState(null)
   const [boardContracts, setBoardContracts] = useState([])
+  const [boardViewing, setBoardViewing] = useState(null)
   const [txContent, setTxContent] = useState('')
   const [txSending, setTxSending] = useState(false)
   const [txError, setTxError] = useState('')
@@ -1978,6 +1979,13 @@ export default function ContractorDashboard() {
         />
       )}
 
+      {boardViewing && (
+        <BoardContractModal
+          contract={boardViewing}
+          onClose={() => setBoardViewing(null)}
+        />
+      )}
+
       {modal?.mode === 'create' && (
         <ContractFormModal
           contract={null}
@@ -2040,7 +2048,7 @@ export default function ContractorDashboard() {
         )}
 
         {/* CONTRACT BOARD TAB */}
-        {tab === 'board' && <BoardTab contracts={boardContracts} />}
+        {tab === 'board' && <BoardTab contracts={boardContracts} onView={setBoardViewing} />}
 
         {/* EMERGENCY CONTRACTS TAB */}
         {tab === 'cc' && <CCTab />}
@@ -2265,11 +2273,10 @@ function BoardContractModal({ contract, onClose }) {
   )
 }
 
-function BoardTab({ contracts }) {
+function BoardTab({ contracts, onView }) {
   const [filterOrg, setFilterOrg]           = useState('ALL')
   const [filterCategory, setFilterCategory] = useState('ALL')
   const [sortBy, setSortBy]                 = useState('rarity')
-  const [viewing, setViewing]               = useState(null)
 
   const orgs = useMemo(() => {
     const seen = new Map()
@@ -2359,8 +2366,6 @@ function BoardTab({ contracts }) {
         </p>
       </div>
 
-      {viewing && <BoardContractModal contract={viewing} onClose={() => setViewing(null)} />}
-
       {filtered.length === 0 ? (
         <div className="text-center py-16">
           <p className="font-mono text-xs text-ghost tracking-widest">NO PUBLISHED CONTRACTS</p>
@@ -2372,7 +2377,7 @@ function BoardTab({ contracts }) {
             return (
               <div
                 key={c.id}
-                onClick={() => setViewing(c)}
+                onClick={() => onView(c)}
                 className={`border ${cfg.border} bg-abyss rounded-sm p-4 flex flex-col gap-2 cursor-pointer hover:bg-ghost/5 transition-colors`}
               >
                 <div className="flex items-start justify-between gap-2">
