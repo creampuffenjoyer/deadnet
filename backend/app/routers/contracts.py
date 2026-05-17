@@ -266,6 +266,11 @@ async def get_contract(
     )
     claim_count = count_result.scalar() or 0
 
+    intel_count_result = await db.execute(
+        select(func.count(IntelDrop.id)).where(IntelDrop.contract_id == contract_id)
+    )
+    intel_count = intel_count_result.scalar() or 0
+
     # First blood username
     first_blood_username = None
     if contract.first_blood_operative_id:
@@ -303,6 +308,7 @@ async def get_contract(
         "next_decay_bc": next_bc,
         "is_published": contract.is_published,
         "claim_count": claim_count,
+        "intel_count": intel_count,
         "is_first_blood_taken": contract.first_claimed_at is not None,
         "first_blood_username": first_blood_username,
         "is_claimed_by_me": is_claimed_by_me,
