@@ -375,11 +375,11 @@ export default function ContractModal({ contract, onClose, onClaimed, isReadOnly
           {/* Description */}
           <div className="px-6 py-5 border-b border-ghost/10">
             {detail ? (
-              <div className="prose prose-invert prose-sm max-w-none font-mono text-sm text-ghost leading-relaxed
+              <div className="prose prose-invert prose-sm max-w-none font-mono text-sm text-ghost leading-relaxed break-words
                 prose-headings:text-bone prose-headings:font-ui prose-headings:font-bold
                 prose-code:bg-void prose-code:text-ember prose-code:px-1 prose-code:rounded
-                prose-pre:bg-void prose-pre:border prose-pre:border-ghost/20
-                prose-blockquote:border-l-ember prose-blockquote:text-ghost prose-strong:text-bone">
+                prose-pre:bg-void prose-pre:border prose-pre:border-ghost/20 prose-pre:overflow-x-auto
+                prose-blockquote:border-l-ember prose-blockquote:text-ghost prose-strong:text-bone [&_p]:break-words [&_p]:[overflow-wrap:anywhere]">
                 <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{detail.description}</ReactMarkdown>
               </div>
             ) : (
