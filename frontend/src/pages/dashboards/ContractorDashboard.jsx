@@ -1137,6 +1137,8 @@ function SlideOutPanel({ contract, onClose, onSaved, onDelete, onFileUploaded })
   const [uploadFile, setUploadFile] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [uploadMsg, setUploadMsg] = useState('')
+  const [localAttachments, setLocalAttachments] = useState(contract.attachments || [])
+  const [removingAttachment, setRemovingAttachment] = useState(null)
   const fileRef = useRef()
 
   const dirty = useMemo(() => {
@@ -1206,7 +1208,8 @@ function SlideOutPanel({ contract, onClose, onSaved, onDelete, onFileUploaded })
     const fd = new FormData()
     fd.append('file', uploadFile)
     try {
-      await client.post(`/contracts/${contract.id}/attachments`, fd, { headers: { 'Content-Type': undefined } })
+      const res = await client.post(`/contracts/${contract.id}/attachments`, fd, { headers: { 'Content-Type': undefined } })
+      setLocalAttachments(prev => [...prev, res.data])
       setUploadFile(null)
       if (fileRef.current) fileRef.current.value = ''
       setUploadMsg(`✓ ${uploadFile.name} uploaded`)
@@ -1216,6 +1219,20 @@ function SlideOutPanel({ contract, onClose, onSaved, onDelete, onFileUploaded })
       setError('Upload failed.')
     } finally {
       setUploading(false)
+    }
+  }
+
+  async function handleRemoveAttachment(stored) {
+    setRemovingAttachment(stored)
+    try {
+      await client.delete(`/contractor/contracts/${contract.id}/attachments/${stored}`)
+      setLocalAttachments(prev => prev.filter(a => a.stored !== stored))
+      onFileUploaded?.()
+    } catch (e) {
+      const detail = e.response?.data?.detail
+      setError(typeof detail === 'string' ? detail : 'Remove failed.')
+    } finally {
+      setRemovingAttachment(null)
     }
   }
 
@@ -1437,12 +1454,23 @@ function SlideOutPanel({ contract, onClose, onSaved, onDelete, onFileUploaded })
           {/* ── ATTACHMENTS */}
           <div>
             <p className="font-mono text-[10px] text-ghost/35 tracking-widest border-b border-ghost/10 pb-1 mb-3">── ATTACHMENTS</p>
-            {contract.attachments?.length > 0 ? (
-              <div className="flex flex-wrap gap-2 mb-3">
-                {contract.attachments.map((att, i) => (
-                  <span key={i} className="font-mono text-xs text-bone/60 border border-ghost/20 rounded-sm px-2 py-0.5">
-                    📎 {att.original || att.original_filename || att}
-                  </span>
+            {localAttachments.length > 0 ? (
+              <div className="flex flex-col gap-1.5 mb-3">
+                {localAttachments.map((att, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2 border border-ghost/20 rounded-sm px-2 py-0.5">
+                    <span className="font-mono text-xs text-bone/60 truncate">
+                      📎 {att.original || att.original_filename || att}
+                    </span>
+                    {canEdit && (
+                      <button
+                        onClick={() => handleRemoveAttachment(att.stored)}
+                        disabled={removingAttachment === att.stored}
+                        className="font-mono text-[10px] text-ghost/50 hover:text-danger tracking-widest shrink-0 transition-colors disabled:opacity-40"
+                      >
+                        {removingAttachment === att.stored ? '...' : '✕ REMOVE'}
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             ) : (

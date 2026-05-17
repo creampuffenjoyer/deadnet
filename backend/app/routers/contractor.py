@@ -1,8 +1,10 @@
+import os
 import time
 from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy.orm.attributes import flag_modified
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -484,3 +486,51 @@ async def get_board(
         }
         for c, org, creator in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# DELETE /contractor/contracts/{id}/attachments/{stored_name}
+# ---------------------------------------------------------------------------
+
+@router.delete("/contracts/{contract_id}/attachments/{stored_name}", status_code=204)
+async def delete_attachment(
+    contract_id: UUID,
+    stored_name: str,
+    current_user: User = Depends(require_contractor),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Contract).where(Contract.id == contract_id).with_for_update()
+    )
+    contract = result.scalar_one_or_none()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    if not _can_edit_contract(contract, current_user.id):
+        raise HTTPException(status_code=403, detail="ACCESS_DENIED")
+
+    attachments = list(contract.attachments or [])
+    new_attachments = [a for a in attachments if a.get("stored") != stored_name]
+    if len(new_attachments) == len(attachments):
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
+    contract.attachments = new_attachments
+    flag_modified(contract, "attachments")
+
+    # Delete from FileStorage table
+    from app.models.file_storage import FileStorage
+    fs_row = (await db.execute(
+        select(FileStorage).where(FileStorage.filename == stored_name)
+    )).scalar_one_or_none()
+    if fs_row:
+        await db.delete(fs_row)
+
+    # Best-effort delete from disk
+    disk_path = os.path.join(UPLOAD_DIR, stored_name)
+    if os.path.isfile(disk_path):
+        try:
+            os.remove(disk_path)
+        except OSError:
+            pass
+
+    await db.commit()

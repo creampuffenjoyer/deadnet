@@ -485,7 +485,6 @@ export default function ContractModal({ contract, onClose, onClaimed, isReadOnly
                 <div className="flex gap-2">
                   <input
                     className="flex-1 bg-void border border-ghost/30 focus:border-ember rounded-sm px-3 py-2.5 font-mono text-sm text-bone placeholder-ghost/40 outline-none transition-all"
-                    placeholder="DEADNET{...}"
                     value={flag}
                     onChange={e => setFlag(e.target.value)}
                     disabled={submitting || status === 'locked'}
