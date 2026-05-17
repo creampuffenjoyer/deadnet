@@ -35,8 +35,10 @@ import EventArchive from './pages/EventArchive'
 import ArchitectDashboard from './pages/dashboards/ArchitectDashboard'
 import ArchitectRoute from './router/ArchitectRoute'
 import MaintenanceGate from './components/ui/MaintenanceGate'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import client from './api/client'
+import { useIdleTimeout } from './hooks/useIdleTimeout'
+import IdleWarningModal from './components/ui/IdleWarningModal'
 
 function BountyBoardRoute() {
   const { user } = useAuth()
@@ -53,12 +55,27 @@ function BountyBoardRoute() {
   return <BountyBoard />
 }
 
+function IdleGuard() {
+  const { user, logout } = useAuth()
+  const [warning, setWarning] = useState(false)
+
+  const handleWarn   = useCallback(() => setWarning(true),  [])
+  const handleLogout = useCallback(() => { setWarning(false); logout() }, [logout])
+  const handleStay   = useCallback(() => setWarning(false),  [])
+
+  useIdleTimeout({ onWarn: handleWarn, onLogout: handleLogout, enabled: !!user })
+
+  if (!warning) return null
+  return <IdleWarningModal onStay={handleStay} onLogout={handleLogout} />
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         {/* Hidden terminal — key sequence ↑↑↓↓S0L, auth pages excluded */}
         <VoidTerminal />
+        <IdleGuard />
         <MaintenanceGate>
         <Routes>
           {/* Public */}
