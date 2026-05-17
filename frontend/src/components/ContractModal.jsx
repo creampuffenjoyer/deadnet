@@ -433,14 +433,24 @@ export default function ContractModal({ contract, onClose, onClaimed, isReadOnly
 
           {/* Intel Drops link */}
           <div className="px-6 py-3 border-b border-ghost/10 flex items-center justify-between">
-            <span className="font-mono text-xs text-ghost tracking-widest">INTEL DROPS AVAILABLE</span>
-            <Link
-              to={`/intel?contract=${c.id}`}
-              onClick={onClose}
-              className="font-mono text-xs text-ember hover:text-flare border border-ember/30 hover:border-ember px-3 py-1.5 rounded-sm transition-all"
-            >
-              [ VISIT THE BROKER ]
-            </Link>
+            {c.intel_count > 0 ? (
+              <>
+                <span className="font-mono text-xs text-ghost tracking-widest">
+                  {c.intel_count} INTEL DROP{c.intel_count !== 1 ? 'S' : ''} AVAILABLE
+                </span>
+                <Link
+                  to={`/intel?contract=${c.id}`}
+                  onClick={onClose}
+                  className="font-mono text-xs text-ember hover:text-flare border border-ember/30 hover:border-ember px-3 py-1.5 rounded-sm transition-all"
+                >
+                  [ VISIT THE BROKER ]
+                </Link>
+              </>
+            ) : (
+              <span className="font-mono text-xs text-ghost/50 tracking-widest">
+                NO INTEL ON THIS CONTRACT
+              </span>
+            )}
           </div>
 
           {/* Claim form */}

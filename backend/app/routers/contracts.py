@@ -134,6 +134,13 @@ async def list_contracts(
     )
     claim_counts = {str(r[0]): r[1] for r in counts_result.all()}
 
+    # Intel drop counts per contract
+    intel_result = await db.execute(
+        select(IntelDrop.contract_id, func.count(IntelDrop.id))
+        .group_by(IntelDrop.contract_id)
+    )
+    intel_counts = {str(r[0]): r[1] for r in intel_result.all()}
+
     # Which contracts this operative has already claimed (current event)
     claimed_ids: set = set()
     if current_user.role == UserRole.OPERATIVE:
@@ -196,6 +203,7 @@ async def list_contracts(
             "next_decay_bc": next_bc,
             "is_published": c.is_published,
             "claim_count": claim_counts.get(str(c.id), 0),
+            "intel_count": intel_counts.get(str(c.id), 0),
             "is_first_blood_taken": c.first_claimed_at is not None,
             "first_blood_username": fb_username_map.get(str(c.first_blood_operative_id)) if c.first_blood_operative_id else None,
             "is_claimed_by_me": str(c.id) in claimed_ids,
