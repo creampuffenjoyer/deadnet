@@ -90,8 +90,11 @@ const EMPTY_FORM = {
 // ---------------------------------------------------------------------------
 function ContractFormModal({ contract, onClose, onSaved, onFileUploaded, events = [] }) {
   const { allowed_file_types, max_upload_mb } = usePlatformFormat()
-  const fileAccept = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin,elf')
-    .split(',').map(e => '.' + e.trim().replace(/^\./, '')).filter(Boolean).join(',')
+  const _exts = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin,elf').split(',').map(e => e.trim().replace(/^\./, '')).filter(Boolean)
+  const fileAccept = [
+    ..._exts.map(e => `.${e}`),
+    ...(_exts.some(e => ['bin','elf','exe','so','dll'].includes(e)) ? ['application/octet-stream','application/x-executable'] : []),
+  ].join(',')
 
   const [form, setForm] = useState(contract
     ? {
@@ -654,8 +657,11 @@ function fmt_size(bytes) {
 
 function CCTab() {
   const { allowed_file_types, max_upload_mb } = usePlatformFormat()
-  const fileAccept = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin,elf')
-    .split(',').map(e => '.' + e.trim().replace(/^\./, '')).filter(Boolean).join(',')
+  const _exts = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin,elf').split(',').map(e => e.trim().replace(/^\./, '')).filter(Boolean)
+  const fileAccept = [
+    ..._exts.map(e => `.${e}`),
+    ...(_exts.some(e => ['bin','elf','exe','so','dll'].includes(e)) ? ['application/octet-stream','application/x-executable'] : []),
+  ].join(',')
 
   const [ccList, setCcList] = useState([])
   const [form, setForm] = useState({ ...CC_EMPTY })
@@ -1111,8 +1117,11 @@ function ContractCard({ contract, onOpen, onTogglePublish, onDelete }) {
 // ---------------------------------------------------------------------------
 function SlideOutPanel({ contract, onClose, onSaved, onDelete, onFileUploaded }) {
   const { allowed_file_types, max_upload_mb } = usePlatformFormat()
-  const fileAccept = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin,elf')
-    .split(',').map(e => '.' + e.trim().replace(/^\./, '')).filter(Boolean).join(',')
+  const _exts = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin,elf').split(',').map(e => e.trim().replace(/^\./, '')).filter(Boolean)
+  const fileAccept = [
+    ..._exts.map(e => `.${e}`),
+    ...(_exts.some(e => ['bin','elf','exe','so','dll'].includes(e)) ? ['application/octet-stream','application/x-executable'] : []),
+  ].join(',')
 
   const isMajor = contract.is_blocked_for_own_org
   const canEdit = contract.can_edit !== false
