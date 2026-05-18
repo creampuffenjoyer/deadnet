@@ -202,7 +202,7 @@ async def _seed():
                 "platform_registration_locked": "false",
                 # File limits
                 "max_upload_mb": "50",
-                "allowed_file_types": "zip,pdf,txt,png,jpg,bin",
+                "allowed_file_types": "zip,pdf,txt,png,jpg,bin,elf",
             }
             settings_list = [{"key": k, "value": v} for k, v in defaults.items()]
             await db.execute(
@@ -714,7 +714,9 @@ END $$""",
             "INSERT INTO platform_settings (key, value) VALUES ('max_operators_per_org','0') ON CONFLICT (key) DO NOTHING",
             "INSERT INTO platform_settings (key, value) VALUES ('platform_registration_locked','false') ON CONFLICT (key) DO NOTHING",
             "INSERT INTO platform_settings (key, value) VALUES ('max_upload_mb','50') ON CONFLICT (key) DO NOTHING",
-            "INSERT INTO platform_settings (key, value) VALUES ('allowed_file_types','zip,pdf,txt,png,jpg,bin') ON CONFLICT (key) DO NOTHING",
+            "INSERT INTO platform_settings (key, value) VALUES ('allowed_file_types','zip,pdf,txt,png,jpg,bin,elf') ON CONFLICT (key) DO NOTHING",
+            # Append elf to existing allowed_file_types if not already present (idempotent)
+            "UPDATE platform_settings SET value = value || ',elf' WHERE key = 'allowed_file_types' AND value NOT LIKE '%elf%'",
             # Pass 1 — reroute season FK constraints to point at events table (idempotent)
             "ALTER TABLE bc_events           DROP CONSTRAINT IF EXISTS bc_events_season_id_fkey",
             "ALTER TABLE bc_events           DROP CONSTRAINT IF EXISTS bc_events_event_id_fkey",

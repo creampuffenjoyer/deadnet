@@ -2493,7 +2493,7 @@ const _ARCH_SETTINGS_DEFAULTS = {
   platform_registration_locked: 'false',
   // file limits
   max_upload_mb: '50',
-  allowed_file_types: 'zip,pdf,txt,png,jpg,bin',
+  allowed_file_types: 'zip,pdf,txt,png,jpg,bin,elf',
 }
 
 const _STATUS_DOT = { ONLINE: '#00FF88', ERROR: '#FF2D2D', CHECKING: '#f97316', UNKNOWN: '#6B6B80' }

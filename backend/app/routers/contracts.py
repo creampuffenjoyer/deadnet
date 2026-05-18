@@ -741,7 +741,7 @@ async def upload_attachment(
     _types_row = (await db.execute(
         select(PlatformSettings).where(PlatformSettings.key == "allowed_file_types")
     )).scalar_one_or_none()
-    allowed_exts_raw = (_types_row.value if _types_row else None) or "zip,pdf,txt,png,jpg,bin"
+    allowed_exts_raw = (_types_row.value if _types_row else None) or "zip,pdf,txt,png,jpg,bin,elf"
     allowed_exts = {f".{x.strip().lstrip('.')}" for x in allowed_exts_raw.split(",") if x.strip()}
 
     original_name = file.filename or "file"

@@ -90,7 +90,7 @@ const EMPTY_FORM = {
 // ---------------------------------------------------------------------------
 function ContractFormModal({ contract, onClose, onSaved, onFileUploaded, events = [] }) {
   const { allowed_file_types, max_upload_mb } = usePlatformFormat()
-  const fileAccept = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin')
+  const fileAccept = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin,elf')
     .split(',').map(e => '.' + e.trim().replace(/^\./, '')).filter(Boolean).join(',')
 
   const [form, setForm] = useState(contract
@@ -654,7 +654,7 @@ function fmt_size(bytes) {
 
 function CCTab() {
   const { allowed_file_types, max_upload_mb } = usePlatformFormat()
-  const fileAccept = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin')
+  const fileAccept = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin,elf')
     .split(',').map(e => '.' + e.trim().replace(/^\./, '')).filter(Boolean).join(',')
 
   const [ccList, setCcList] = useState([])
@@ -884,7 +884,7 @@ function CCTab() {
                   onMouseLeave={e => e.currentTarget.style.borderColor = '#2A2A42'}
                 >
                   <span className="font-mono text-xs text-ghost/60 tracking-widest mb-1">[ UPLOAD CHALLENGE FILE ]</span>
-                  <span className="font-mono text-[10px] text-ghost/30">Max {max_upload_mb}MB — {(allowed_file_types || 'zip,pdf,txt,png,jpg,bin').split(',').slice(0,5).join(', ')}...</span>
+                  <span className="font-mono text-[10px] text-ghost/30">Max {max_upload_mb}MB — {(allowed_file_types || 'zip,pdf,txt,png,jpg,bin,elf').split(',').slice(0,5).join(', ')}...</span>
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -1111,7 +1111,7 @@ function ContractCard({ contract, onOpen, onTogglePublish, onDelete }) {
 // ---------------------------------------------------------------------------
 function SlideOutPanel({ contract, onClose, onSaved, onDelete, onFileUploaded }) {
   const { allowed_file_types, max_upload_mb } = usePlatformFormat()
-  const fileAccept = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin')
+  const fileAccept = (allowed_file_types || 'zip,pdf,txt,png,jpg,bin,elf')
     .split(',').map(e => '.' + e.trim().replace(/^\./, '')).filter(Boolean).join(',')
 
   const isMajor = contract.is_blocked_for_own_org

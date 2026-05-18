@@ -1,6 +1,8 @@
 import mimetypes
 import os
 
+mimetypes.add_type("application/x-executable", ".elf")
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
