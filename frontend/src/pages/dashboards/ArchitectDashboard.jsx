@@ -3780,6 +3780,13 @@ function ArchiveTab() {
   const [redeployAllPublish,  setRedeployAllPublish]  = useState(false)
   const [redeployAllLoading,  setRedeployAllLoading]  = useState(false)
   const [redeployAllProgress, setRedeployAllProgress] = useState({ done: 0, total: 0 })
+  // Multi-select deploy
+  const [selectedIds,          setSelectedIds]          = useState([])
+  const [deploySelOpen,        setDeploySelOpen]        = useState(false)
+  const [deploySelEventId,     setDeploySelEventId]     = useState('')
+  const [deploySelPublish,     setDeploySelPublish]     = useState(false)
+  const [deploySelLoading,     setDeploySelLoading]     = useState(false)
+  const [deploySelProgress,    setDeploySelProgress]    = useState({ done: 0, total: 0 })
   // Flash / sort / page
   const [msg,     setMsg]     = useState('')
   const [msgType, setMsgType] = useState('success')
@@ -3869,6 +3876,42 @@ function ArchiveTab() {
     flash(`${done} contract(s) deployed to ${evtName}${failed > 0 ? ` · ${failed} failed` : ''}.`, failed > 0 ? 'error' : 'success')
   }
 
+  async function handleDeploySelected() {
+    const targets = sorted.filter(c => selectedIds.includes(c.id))
+    if (!deploySelEventId || targets.length === 0) return
+    setDeploySelLoading(true)
+    let done = 0, failed = 0
+    setDeploySelProgress({ done: 0, total: targets.length })
+    for (const c of targets) {
+      try {
+        await client.post(`/admin/contracts/${c.id}/redeploy`, { event_id: parseInt(deploySelEventId), publish: deploySelPublish })
+        done++
+      } catch { failed++ }
+      setDeploySelProgress({ done: done + failed, total: targets.length })
+    }
+    setDeploySelLoading(false)
+    setDeploySelOpen(false); setDeploySelEventId(''); setDeploySelPublish(false)
+    setSelectedIds([])
+    const evtName = events.find(e => String(e.id) === String(deploySelEventId))?.name || 'target event'
+    flash(`${done} contract(s) deployed to ${evtName}${failed > 0 ? ` · ${failed} failed` : ''}.`, failed > 0 ? 'error' : 'success')
+  }
+
+  function toggleSelect(id, e) {
+    e.stopPropagation()
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  function toggleSelectPage(e) {
+    e.stopPropagation()
+    const pageIds = pageSlice.map(c => c.id)
+    const allSel = pageIds.every(id => selectedIds.includes(id))
+    if (allSel) {
+      setSelectedIds(prev => prev.filter(id => !pageIds.includes(id)))
+    } else {
+      setSelectedIds(prev => [...new Set([...prev, ...pageIds])])
+    }
+  }
+
   function toggleSort(key) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir('asc'); setPage(1) }
@@ -3893,6 +3936,8 @@ function ArchiveTab() {
   const safePage    = Math.min(page, totalPages)
   const pageSlice   = sorted.slice((safePage - 1) * ARCH_ARCHIVE_PAGE_SIZE, safePage * ARCH_ARCHIVE_PAGE_SIZE)
   const activeEvents = events.filter(e => ['ACTIVE', 'UPCOMING'].includes(e.status))
+  const allOnPageSelected  = pageSlice.length > 0 && pageSlice.every(c => selectedIds.includes(c.id))
+  const someOnPageSelected = pageSlice.some(c => selectedIds.includes(c.id))
   const RARITY_COLOR = { COMMON: '#8A8A9A', RARE: '#4A9EFF', CLASSIFIED: '#FF2D2D' }
 
   const iS = { fontFamily: M, fontSize: '11px', background: '#0d0d0d', border: '1px solid #222222', color: '#e5e5e5', padding: '5px 10px', outline: 'none' }
@@ -3907,6 +3952,7 @@ function ArchiveTab() {
   const thBase = { fontFamily: G, fontSize: '10px', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', padding: '8px 12px', userSelect: 'none', background: 'transparent', border: 'none', textAlign: 'left' }
 
   const COL_HEADERS = [
+    { key: null,            label: '' },
     { key: 'title',         label: 'TITLE' },
     { key: 'category',      label: 'CATEGORY' },
     { key: 'rarity',        label: 'RARITY' },
@@ -3954,16 +4000,24 @@ function ArchiveTab() {
 
       {/* Archive library */}
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
           <p style={{ fontFamily: G, fontSize: '10px', fontWeight: 600, color: '#444444', letterSpacing: '0.07em', textTransform: 'uppercase' }}>
             ARCHIVED LIBRARY — {archived.length} CONTRACT{archived.length !== 1 ? 'S' : ''}
             {!loading && archived.length > 0 && <span style={{ color: '#2a2a2a', marginLeft: '12px' }}>PAGE {safePage}/{totalPages}</span>}
           </p>
           {!loading && archived.length > 0 && (
-            <button
-              onClick={() => { setRedeployAllOpen(true); setRedeployAllEventId(''); setRedeployAllPublish(false) }}
-              style={{ fontFamily: G, fontSize: '10px', padding: '4px 12px', background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.3)', color: '#f97316', cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase' }}
-            >[ REDEPLOY ALL ]</button>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {selectedIds.length > 0 && (
+                <button
+                  onClick={() => { setDeploySelOpen(true); setDeploySelEventId(''); setDeploySelPublish(false) }}
+                  style={{ fontFamily: G, fontSize: '10px', padding: '4px 12px', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)', color: '#22c55e', cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase' }}
+                >[ DEPLOY SELECTED ({selectedIds.length}) ]</button>
+              )}
+              <button
+                onClick={() => { setRedeployAllOpen(true); setRedeployAllEventId(''); setRedeployAllPublish(false) }}
+                style={{ fontFamily: G, fontSize: '10px', padding: '4px 12px', background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.3)', color: '#f97316', cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase' }}
+              >[ REDEPLOY ALL ]</button>
+            </div>
           )}
         </div>
 
@@ -3979,8 +4033,18 @@ function ArchiveTab() {
           <>
             <div style={{ background: '#111111', border: '1px solid #1f1f1f', overflowX: 'auto' }}>
               {/* Sortable header */}
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 130px 110px 60px 160px 70px 170px', borderBottom: '1px solid #1f1f1f', background: '#0d0d0d' }}>
-                {COL_HEADERS.map(({ key, label }) => (
+              <div style={{ display: 'grid', gridTemplateColumns: '28px 2fr 155px 100px 55px 130px 60px 140px', borderBottom: '1px solid #1f1f1f', background: '#0d0d0d', minWidth: '1000px', alignItems: 'center' }}>
+                {/* Select-all checkbox */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }} onClick={e => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={allOnPageSelected}
+                    ref={el => { if (el) el.indeterminate = someOnPageSelected && !allOnPageSelected }}
+                    onChange={toggleSelectPage}
+                    style={{ width: '12px', height: '12px', cursor: 'pointer', accentColor: '#f97316' }}
+                  />
+                </div>
+                {COL_HEADERS.slice(1).map(({ key, label }) => (
                   <button key={label} onClick={() => key && toggleSort(key)}
                     style={{ ...thBase, color: key ? (sortKey === key ? '#f97316' : '#333333') : '#222222', cursor: key ? 'pointer' : 'default' }}
                   >
@@ -3996,23 +4060,35 @@ function ArchiveTab() {
               {pageSlice.map(c => {
                 const rColor = RARITY_COLOR[c.rarity] || '#8A8A9A'
                 const isExpanded = expandedId === c.id
+                const isSelected = selectedIds.includes(c.id)
                 return (
-                  <div key={c.id} style={{ borderBottom: '1px solid #1a1a1a', background: isExpanded ? '#0f0f0f' : 'transparent' }}>
+                  <div key={c.id} style={{ borderBottom: '1px solid #1a1a1a', background: isExpanded ? '#0f0f0f' : isSelected ? 'rgba(249,115,22,0.04)' : 'transparent' }}>
                     {/* Clickable main row */}
                     <div
                       style={{
-                        display: 'grid', gridTemplateColumns: '2fr 130px 110px 60px 160px 70px 170px',
-                        padding: '10px 12px', alignItems: 'center',
-                        borderLeft: `3px solid ${rColor}${isExpanded ? '60' : '25'}`,
+                        display: 'grid', gridTemplateColumns: '28px 2fr 155px 100px 55px 130px 60px 140px',
+                        padding: '10px 12px', alignItems: 'center', minWidth: '1000px',
+                        borderLeft: `3px solid ${rColor}${isExpanded ? '60' : isSelected ? '80' : '25'}`,
                         cursor: 'pointer', userSelect: 'none',
                       }}
                       onClick={() => toggleExpand(c.id)}
                     >
+                      {/* Per-row checkbox */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => toggleSelect(c.id, e)}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          style={{ width: '12px', height: '12px', cursor: 'pointer', accentColor: '#f97316' }}
+                        />
+                      </div>
                       <div style={{ overflow: 'hidden', paddingRight: '8px' }}>
                         <p style={{ fontFamily: G, fontSize: '12px', color: '#e5e5e5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</p>
                         {c.creator_username && <p style={{ fontFamily: M, fontSize: '10px', color: '#333333', marginTop: '2px' }}>{c.creator_username}</p>}
                       </div>
-                      <span style={{ fontFamily: M, fontSize: '11px', color: '#555555', whiteSpace: 'nowrap' }}>{c.category}</span>
+                      <div style={{ overflow: 'hidden' }}>
+                        <span style={{ fontFamily: M, fontSize: '11px', color: '#555555', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.category}</span>
+                      </div>
                       <span style={{ fontFamily: M, fontSize: '11px', color: rColor, whiteSpace: 'nowrap' }}>{c.rarity}</span>
                       <span style={{ fontFamily: M, fontSize: '12px', fontWeight: 700, color: '#f97316', whiteSpace: 'nowrap' }}>{c.base_bc_value}</span>
                       <div style={{ overflow: 'hidden', paddingRight: '8px' }}>
@@ -4031,7 +4107,7 @@ function ArchiveTab() {
 
                     {/* Inline expansion */}
                     {isExpanded && (
-                      <div style={{ padding: '12px 14px', borderTop: '1px solid #1f1f1f', background: '#0a0a0a' }}>
+                      <div style={{ padding: '12px 14px', borderTop: '1px solid #1f1f1f', background: '#0a0a0a', minWidth: '1000px' }}>
                         {/* Meta */}
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '12px' }}>
                           {c.intel_count > 0 && <span style={{ fontFamily: M, fontSize: '10px', color: '#444444' }}>{c.intel_count} intel drops</span>}
@@ -4097,6 +4173,55 @@ function ArchiveTab() {
           </>
         )}
       </div>
+
+      {/* ── Deploy Selected modal ── */}
+      {deploySelOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
+          onClick={e => { if (e.target === e.currentTarget && !deploySelLoading) setDeploySelOpen(false) }}
+        >
+          <div style={{ background: '#111111', border: '1px solid #2a2a2a', borderTop: '3px solid #22c55e', padding: '24px', width: '100%', maxWidth: '440px' }}>
+            <p style={{ fontFamily: G, fontSize: '10px', fontWeight: 600, color: '#444444', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '6px' }}>DEPLOY SELECTED CONTRACTS</p>
+            <p style={{ fontFamily: G, fontSize: '16px', fontWeight: 700, color: '#e5e5e5', marginBottom: '4px' }}>{selectedIds.length} selected</p>
+            <p style={{ fontFamily: G, fontSize: '11px', color: '#444444', marginBottom: '20px', lineHeight: 1.5 }}>
+              A fresh copy of each selected contract will be created in the target event.<br/>All archived originals are preserved. Intel drops are included.
+            </p>
+            <p style={{ ...thBase, padding: '0 0 6px' }}>TARGET EVENT</p>
+            <select value={deploySelEventId} onChange={e => setDeploySelEventId(e.target.value)} style={{ ...iS, width: '100%', marginBottom: '16px' }} disabled={deploySelLoading}>
+              <option value="">— SELECT TARGET EVENT —</option>
+              {activeEvents.map(e => <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>)}
+            </select>
+            <p style={{ ...thBase, padding: '0 0 8px' }}>DEPLOY AS</p>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              {[false, true].map(v => (
+                <button key={String(v)} onClick={() => setDeploySelPublish(v)} disabled={deploySelLoading}
+                  style={{ flex: 1, fontFamily: G, fontSize: '11px', padding: '8px',
+                    background: deploySelPublish === v ? (v ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.06)') : 'transparent',
+                    border: `1px solid ${deploySelPublish === v ? (v ? '#22c55e' : '#555555') : '#2a2a2a'}`,
+                    color: deploySelPublish === v ? (v ? '#22c55e' : '#e5e5e5') : '#444444',
+                    cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase' }}
+                >{v ? 'PUBLISHED' : 'DRAFT'}</button>
+              ))}
+            </div>
+            {deploySelLoading && (
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ height: '2px', background: '#1f1f1f', marginBottom: '6px' }}>
+                  <div style={{ height: '100%', background: '#22c55e', width: `${deploySelProgress.total ? (deploySelProgress.done / deploySelProgress.total) * 100 : 0}%`, transition: 'width 0.2s' }} />
+                </div>
+                <p style={{ fontFamily: M, fontSize: '10px', color: '#444444', textAlign: 'center' }}>
+                  {deploySelProgress.done} / {deploySelProgress.total} deployed…
+                </p>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button onClick={() => setDeploySelOpen(false)} disabled={deploySelLoading} style={{ ...btnG, opacity: deploySelLoading ? 0.4 : 1 }}>CANCEL</button>
+              <button onClick={handleDeploySelected} disabled={!deploySelEventId || deploySelLoading}
+                style={btnP(!deploySelEventId || deploySelLoading, deploySelPublish)}>
+                {deploySelLoading ? `DEPLOYING ${deploySelProgress.done}/${deploySelProgress.total}…` : deploySelPublish ? '[ DEPLOY & PUBLISH ]' : '[ DEPLOY AS DRAFT ]'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── REDEPLOY ALL modal ── */}
       {redeployAllOpen && (

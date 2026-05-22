@@ -2757,6 +2757,13 @@ function ArchiveTab() {
   const [redeployAllPublish,  setRedeployAllPublish]  = useState(false)
   const [redeployAllLoading,  setRedeployAllLoading]  = useState(false)
   const [redeployAllProgress, setRedeployAllProgress] = useState({ done: 0, total: 0 })
+  // Multi-select deploy
+  const [selectedIds,          setSelectedIds]          = useState([])
+  const [deploySelOpen,        setDeploySelOpen]        = useState(false)
+  const [deploySelEventId,     setDeploySelEventId]     = useState('')
+  const [deploySelPublish,     setDeploySelPublish]     = useState(false)
+  const [deploySelLoading,     setDeploySelLoading]     = useState(false)
+  const [deploySelProgress,    setDeploySelProgress]    = useState({ done: 0, total: 0 })
   // Flash / sort / page
   const [msg,     setMsg]     = useState('')
   const [msgType, setMsgType] = useState('success')
@@ -2859,6 +2866,44 @@ function ArchiveTab() {
     )
   }
 
+  async function handleDeploySelected() {
+    const targets = sorted.filter(c => selectedIds.includes(c.id))
+    if (!deploySelEventId || targets.length === 0) return
+    setDeploySelLoading(true)
+    let done = 0, failed = 0
+    setDeploySelProgress({ done: 0, total: targets.length })
+    for (const c of targets) {
+      try {
+        await client.post(`/admin/contracts/${c.id}/redeploy`, {
+          event_id: parseInt(deploySelEventId), publish: deploySelPublish,
+        })
+        done++
+      } catch { failed++ }
+      setDeploySelProgress({ done: done + failed, total: targets.length })
+    }
+    setDeploySelLoading(false)
+    setDeploySelOpen(false); setDeploySelEventId(''); setDeploySelPublish(false)
+    setSelectedIds([])
+    const evtName = events.find(e => String(e.id) === String(deploySelEventId))?.name || 'target event'
+    flash(`${done} contract(s) deployed to ${evtName}${failed > 0 ? ` · ${failed} failed` : ''}.`, failed > 0 ? 'error' : 'success')
+  }
+
+  function toggleSelect(id, e) {
+    e.stopPropagation()
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  function toggleSelectPage(e) {
+    e.stopPropagation()
+    const pageIds = pageSlice.map(c => c.id)
+    const allSel = pageIds.every(id => selectedIds.includes(id))
+    if (allSel) {
+      setSelectedIds(prev => prev.filter(id => !pageIds.includes(id)))
+    } else {
+      setSelectedIds(prev => [...new Set([...prev, ...pageIds])])
+    }
+  }
+
   function toggleSort(key) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir('asc'); setPage(1) }
@@ -2883,9 +2928,12 @@ function ArchiveTab() {
   const safePage   = Math.min(page, totalPages)
   const pageSlice  = sorted.slice((safePage - 1) * ARCHIVE_PAGE_SIZE, safePage * ARCHIVE_PAGE_SIZE)
   const activeEvents = events.filter(e => ['ACTIVE', 'UPCOMING'].includes(e.status))
+  const allOnPageSelected  = pageSlice.length > 0 && pageSlice.every(c => selectedIds.includes(c.id))
+  const someOnPageSelected = pageSlice.some(c => selectedIds.includes(c.id))
 
   const RARITY_CFG = { COMMON: '#8A8A9A', RARE: '#4A9EFF', CLASSIFIED: '#FF2D2D' }
   const COL_HEADERS = [
+    { key: null,            label: '' },
     { key: 'title',         label: 'TITLE' },
     { key: 'category',      label: 'CATEGORY' },
     { key: 'rarity',        label: 'RARITY' },
@@ -2934,18 +2982,28 @@ function ArchiveTab() {
 
       {/* Archive library */}
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <p className="font-mono text-[10px] text-ghost tracking-widest">
             ARCHIVED LIBRARY — {archived.length} CONTRACT{archived.length !== 1 ? 'S' : ''}
             {!loading && archived.length > 0 && <span className="text-ghost/30 ml-3">PAGE {safePage}/{totalPages}</span>}
           </p>
           {!loading && archived.length > 0 && (
-            <button
-              onClick={() => { setRedeployAllOpen(true); setRedeployAllEventId(''); setRedeployAllPublish(false) }}
-              className="font-mono text-[10px] text-flare border border-flare/30 hover:border-flare hover:bg-flare/5 px-3 py-1 rounded-sm tracking-widest transition-all"
-            >
-              [ REDEPLOY ALL ]
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              {selectedIds.length > 0 && (
+                <button
+                  onClick={() => { setDeploySelOpen(true); setDeploySelEventId(''); setDeploySelPublish(false) }}
+                  className="font-mono text-[10px] text-success border border-success/30 hover:border-success hover:bg-success/5 px-3 py-1 rounded-sm tracking-widest transition-all"
+                >
+                  [ DEPLOY SELECTED ({selectedIds.length}) ]
+                </button>
+              )}
+              <button
+                onClick={() => { setRedeployAllOpen(true); setRedeployAllEventId(''); setRedeployAllPublish(false) }}
+                className="font-mono text-[10px] text-flare border border-flare/30 hover:border-flare hover:bg-flare/5 px-3 py-1 rounded-sm tracking-widest transition-all"
+              >
+                [ REDEPLOY ALL ]
+              </button>
+            </div>
           )}
         </div>
 
@@ -2960,8 +3018,18 @@ function ArchiveTab() {
           <>
             <div className="border border-ghost/20 rounded-sm overflow-x-auto">
               {/* Sortable header */}
-              <div className="grid grid-cols-[2fr_120px_110px_60px_140px_80px_170px] px-4 py-2 border-b border-ghost/10 bg-abyss min-w-[900px]">
-                {COL_HEADERS.map(({ key, label }) => (
+              <div className="grid grid-cols-[28px_2fr_155px_100px_55px_130px_60px_140px] px-4 py-2 border-b border-ghost/10 bg-abyss min-w-[1000px] items-center">
+                {/* Select-all checkbox */}
+                <div className="flex items-center justify-center" onClick={e => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={allOnPageSelected}
+                    ref={el => { if (el) el.indeterminate = someOnPageSelected && !allOnPageSelected }}
+                    onChange={toggleSelectPage}
+                    className="w-3 h-3 accent-ember cursor-pointer"
+                  />
+                </div>
+                {COL_HEADERS.slice(1).map(({ key, label }) => (
                   <button
                     key={label}
                     onClick={() => key && toggleSort(key)}
@@ -2978,21 +3046,33 @@ function ArchiveTab() {
               {pageSlice.map(c => {
                 const rColor = RARITY_CFG[c.rarity] || '#8A8A9A'
                 const isExpanded = expandedId === c.id
+                const isSelected = selectedIds.includes(c.id)
                 return (
-                  <div key={c.id} className={`border-b border-ghost/10 transition-colors ${isExpanded ? 'bg-abyss/50' : ''}`}>
+                  <div key={c.id} className={`border-b border-ghost/10 transition-colors ${isExpanded ? 'bg-abyss/50' : isSelected ? 'bg-ember/5' : ''}`}>
                     {/* Main clickable row */}
                     <div
-                      className="grid grid-cols-[2fr_120px_110px_60px_140px_80px_170px] px-4 py-3 items-center min-w-[900px] hover:bg-abyss/40 transition-colors cursor-pointer select-none"
-                      style={{ borderLeft: `3px solid ${rColor}${isExpanded ? '70' : '30'}` }}
+                      className="grid grid-cols-[28px_2fr_155px_100px_55px_130px_60px_140px] px-4 py-3 items-center min-w-[1000px] hover:bg-abyss/40 transition-colors cursor-pointer select-none"
+                      style={{ borderLeft: `3px solid ${rColor}${isExpanded ? '70' : isSelected ? '80' : '30'}` }}
                       onClick={() => toggleExpand(c.id)}
                     >
+                      {/* Per-row checkbox */}
+                      <div className="flex items-center justify-center" onClick={e => toggleSelect(c.id, e)}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          className="w-3 h-3 accent-ember cursor-pointer"
+                        />
+                      </div>
                       <div className="min-w-0 pr-2">
                         <p className="font-mono text-sm text-bone truncate">{c.title}</p>
                         {c.tags?.length > 0 && (
                           <p className="font-mono text-[10px] text-ghost/40 truncate mt-0.5">{c.tags.slice(0, 3).join(', ')}</p>
                         )}
                       </div>
-                      <span className="font-mono text-xs text-ghost whitespace-nowrap">{c.category}</span>
+                      <div className="min-w-0 overflow-hidden">
+                        <span className="font-mono text-xs text-ghost block truncate">{c.category}</span>
+                      </div>
                       <span className="font-mono text-xs whitespace-nowrap" style={{ color: rColor }}>{c.rarity}</span>
                       <span className="font-mono text-sm font-bold text-ember whitespace-nowrap">{c.base_bc_value}</span>
                       <div className="min-w-0 pr-2">
@@ -3022,7 +3102,7 @@ function ArchiveTab() {
 
                     {/* Inline expansion panel */}
                     {isExpanded && (
-                      <div className="px-4 py-3 border-t border-ghost/5 bg-void/30 min-w-[900px]">
+                      <div className="px-4 py-3 border-t border-ghost/5 bg-void/30 min-w-[1000px]">
                         {/* Meta row */}
                         <div className="flex flex-wrap gap-x-5 gap-y-1 mb-3">
                           {c.intel_count > 0 && <span className="font-mono text-[10px] text-ghost/50">{c.intel_count} intel drops</span>}
@@ -3167,6 +3247,78 @@ function ArchiveTab() {
                     }`}
                   >
                     {redeployAllLoading ? `DEPLOYING ${redeployAllProgress.done}/${redeployAllProgress.total}...` : redeployAllPublish ? '[ DEPLOY ALL & PUBLISH ]' : '[ DEPLOY ALL AS DRAFT ]'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ── Deploy Selected modal ── */}
+      <AnimatePresence>
+        {deploySelOpen && (
+          <>
+            <motion.div className="fixed inset-0 z-50 bg-void/70" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => !deploySelLoading && setDeploySelOpen(false)} />
+            <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.15 }}
+            >
+              <div className="bg-abyss border border-ghost/30 rounded-sm p-6 w-full max-w-md pointer-events-auto" style={{ borderTop: '3px solid #00FF88' }}>
+                <p className="font-mono text-[10px] text-ghost tracking-widest mb-1">DEPLOY SELECTED CONTRACTS</p>
+                <p className="font-mono text-lg text-bone font-bold mb-1">{selectedIds.length} selected</p>
+                <p className="font-mono text-[10px] text-ghost/50 mb-5 leading-relaxed">
+                  A fresh copy of each selected contract will be created in the target event.<br/>
+                  All archived originals are preserved. Intel drops are included.
+                </p>
+                <label className="font-mono text-[10px] text-ghost tracking-widest block mb-2">TARGET EVENT</label>
+                <select value={deploySelEventId} onChange={e => setDeploySelEventId(e.target.value)}
+                  className="w-full bg-void border border-ghost/30 rounded-sm px-3 py-2 font-mono text-xs text-bone focus:outline-none focus:border-ember mb-4"
+                  disabled={deploySelLoading}
+                >
+                  <option value="">— SELECT TARGET EVENT —</option>
+                  {activeEvents.map(e => <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>)}
+                </select>
+                <label className="font-mono text-[10px] text-ghost tracking-widest block mb-2">DEPLOY AS</label>
+                <div className="flex gap-2 mb-5">
+                  {[false, true].map(v => (
+                    <button key={String(v)} onClick={() => setDeploySelPublish(v)} disabled={deploySelLoading}
+                      className={`flex-1 font-mono text-xs py-2 rounded-sm border transition-all disabled:opacity-50 ${
+                        deploySelPublish === v
+                          ? v ? 'border-success/60 text-success bg-success/10' : 'border-ghost/60 text-bone bg-ghost/10'
+                          : 'border-ghost/20 text-ghost/50 hover:border-ghost/40'
+                      }`}
+                    >{v ? 'PUBLISHED' : 'DRAFT'}</button>
+                  ))}
+                </div>
+                {deploySelLoading && (
+                  <div className="mb-4">
+                    <div className="h-1 bg-ghost/10 rounded-full overflow-hidden mb-1">
+                      <div className="h-full bg-success transition-all"
+                        style={{ width: `${deploySelProgress.total ? (deploySelProgress.done / deploySelProgress.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                    <p className="font-mono text-[10px] text-ghost/50 text-center">
+                      {deploySelProgress.done} / {deploySelProgress.total} deployed…
+                    </p>
+                  </div>
+                )}
+                <div className="flex justify-end gap-3">
+                  <button onClick={() => setDeploySelOpen(false)} disabled={deploySelLoading}
+                    className="font-mono text-xs text-ghost border border-ghost/20 px-4 py-2 rounded-sm hover:border-ghost transition-all disabled:opacity-40"
+                  >CANCEL</button>
+                  <button
+                    onClick={handleDeploySelected}
+                    disabled={!deploySelEventId || deploySelLoading}
+                    className={`font-mono text-xs px-4 py-2 rounded-sm border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                      deploySelPublish
+                        ? 'text-success border-success/40 hover:border-success hover:bg-success/10'
+                        : 'text-ember border-ember/40 hover:border-ember hover:bg-ember/10'
+                    }`}
+                  >
+                    {deploySelLoading
+                      ? `DEPLOYING ${deploySelProgress.done}/${deploySelProgress.total}...`
+                      : deploySelPublish ? '[ DEPLOY & PUBLISH ]' : '[ DEPLOY AS DRAFT ]'}
                   </button>
                 </div>
               </div>
