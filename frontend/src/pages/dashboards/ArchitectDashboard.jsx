@@ -3753,20 +3753,39 @@ function ArchLogTab() {
 // ---------------------------------------------------------------------------
 // ARCHIVE TAB — browse & redeploy archived contracts (Architect-scoped view)
 // ---------------------------------------------------------------------------
+const ARCH_ARCHIVE_PAGE_SIZE = 15
+
 function ArchiveTab() {
   const G = 'Geist, sans-serif'
   const M = 'JetBrains Mono, monospace'
 
-  const [archived,        setArchived]        = useState([])
-  const [events,          setEvents]          = useState([])
-  const [loading,         setLoading]         = useState(true)
-  const [bulkEventId,     setBulkEventId]     = useState('')
-  const [bulking,         setBulking]         = useState(false)
-  const [redeployTarget,  setRedeployTarget]  = useState(null)
-  const [redeployEventId, setRedeployEventId] = useState('')
-  const [redeployLoading, setRedeployLoading] = useState(false)
-  const [msg,             setMsg]             = useState('')
-  const [msgType,         setMsgType]         = useState('success')
+  const [archived,            setArchived]            = useState([])
+  const [events,              setEvents]              = useState([])
+  const [loading,             setLoading]             = useState(true)
+  const [bulkEventId,         setBulkEventId]         = useState('')
+  const [bulking,             setBulking]             = useState(false)
+  // Single-contract modal redeploy
+  const [redeployTarget,      setRedeployTarget]      = useState(null)
+  const [redeployEventId,     setRedeployEventId]     = useState('')
+  const [redeployPublish,     setRedeployPublish]     = useState(false)
+  const [redeployLoading,     setRedeployLoading]     = useState(false)
+  // Inline quick-deploy (expanded row)
+  const [expandedId,          setExpandedId]          = useState(null)
+  const [inlineEventId,       setInlineEventId]       = useState('')
+  const [inlinePublish,       setInlinePublish]       = useState(false)
+  const [inlineDeploying,     setInlineDeploying]     = useState(false)
+  // Redeploy-all
+  const [redeployAllOpen,     setRedeployAllOpen]     = useState(false)
+  const [redeployAllEventId,  setRedeployAllEventId]  = useState('')
+  const [redeployAllPublish,  setRedeployAllPublish]  = useState(false)
+  const [redeployAllLoading,  setRedeployAllLoading]  = useState(false)
+  const [redeployAllProgress, setRedeployAllProgress] = useState({ done: 0, total: 0 })
+  // Flash / sort / page
+  const [msg,     setMsg]     = useState('')
+  const [msgType, setMsgType] = useState('success')
+  const [sortKey, setSortKey] = useState('archived_at')
+  const [sortDir, setSortDir] = useState('desc')
+  const [page,    setPage]    = useState(1)
 
   function flash(text, type = 'success') {
     setMsg(text); setMsgType(type)
@@ -3777,7 +3796,7 @@ function ArchiveTab() {
     setLoading(true)
     try {
       const r = await client.get('/admin/contracts/archive')
-      setArchived(r.data)
+      setArchived(r.data); setPage(1)
     } catch { flash('Failed to load archive.', 'error') }
     finally { setLoading(false) }
   }
@@ -3792,10 +3811,9 @@ function ArchiveTab() {
     setBulking(true)
     try {
       const r = await client.post(`/admin/events/${bulkEventId}/archive-contracts`)
-      const skippedNote = r.data.skipped > 0 ? ` (${r.data.skipped} skipped — not owned by your org)` : ''
-      flash(`${r.data.archived} contract(s) archived.${skippedNote}`)
-      setBulkEventId('')
-      loadArchive()
+      const note = r.data.skipped > 0 ? ` (${r.data.skipped} skipped)` : ''
+      flash(`${r.data.archived} contract(s) archived.${note}`)
+      setBulkEventId(''); loadArchive()
     } catch (e) {
       flash(e.response?.data?.detail || 'Bulk archive failed.', 'error')
     } finally { setBulking(false) }
@@ -3804,89 +3822,131 @@ function ArchiveTab() {
   async function handleUnarchive(contract) {
     try {
       await client.post(`/admin/contracts/${contract.id}/archive`)
-      flash(`"${contract.title}" removed from archive.`)
+      flash(`"${contract.title}" restored to its original event as unpublished.`)
       loadArchive()
-    } catch { flash('Failed to un-archive.', 'error') }
+    } catch { flash('Failed to restore contract.', 'error') }
   }
 
   async function handleRedeploy() {
     if (!redeployEventId) return
     setRedeployLoading(true)
     try {
-      await client.post(`/admin/contracts/${redeployTarget.id}/redeploy`, { event_id: parseInt(redeployEventId) })
+      await client.post(`/admin/contracts/${redeployTarget.id}/redeploy`, { event_id: parseInt(redeployEventId), publish: redeployPublish })
       const evtName = events.find(e => String(e.id) === String(redeployEventId))?.name || 'target event'
-      flash(`"${redeployTarget.title}" redeployed to ${evtName} as DRAFT.`)
-      setRedeployTarget(null)
-      setRedeployEventId('')
-    } catch (e) {
-      flash(e.response?.data?.detail || 'Redeploy failed.', 'error')
-    } finally { setRedeployLoading(false) }
+      flash(`"${redeployTarget.title}" deployed to ${evtName} as ${redeployPublish ? 'PUBLISHED' : 'DRAFT'}.`)
+      setRedeployTarget(null); setRedeployEventId(''); setRedeployPublish(false)
+    } catch (e) { flash(e.response?.data?.detail || 'Redeploy failed.', 'error') }
+    finally { setRedeployLoading(false) }
   }
 
-  const activeEvents = events.filter(e => ['ACTIVE', 'UPCOMING'].includes(e.status))
+  async function handleInlineDeploy(contract) {
+    if (!inlineEventId) return
+    setInlineDeploying(true)
+    try {
+      await client.post(`/admin/contracts/${contract.id}/redeploy`, { event_id: parseInt(inlineEventId), publish: inlinePublish })
+      const evtName = events.find(e => String(e.id) === String(inlineEventId))?.name || 'target event'
+      flash(`"${contract.title}" deployed to ${evtName} as ${inlinePublish ? 'PUBLISHED' : 'DRAFT'}.`)
+      setExpandedId(null); setInlineEventId(''); setInlinePublish(false)
+    } catch (e) { flash(e.response?.data?.detail || 'Deploy failed.', 'error') }
+    finally { setInlineDeploying(false) }
+  }
 
+  async function handleRedeployAll() {
+    if (!redeployAllEventId || sorted.length === 0) return
+    setRedeployAllLoading(true)
+    let done = 0, failed = 0
+    setRedeployAllProgress({ done: 0, total: sorted.length })
+    for (const c of sorted) {
+      try {
+        await client.post(`/admin/contracts/${c.id}/redeploy`, { event_id: parseInt(redeployAllEventId), publish: redeployAllPublish })
+        done++
+      } catch { failed++ }
+      setRedeployAllProgress({ done: done + failed, total: sorted.length })
+    }
+    setRedeployAllLoading(false)
+    setRedeployAllOpen(false); setRedeployAllEventId(''); setRedeployAllPublish(false)
+    const evtName = events.find(e => String(e.id) === String(redeployAllEventId))?.name || 'target event'
+    flash(`${done} contract(s) deployed to ${evtName}${failed > 0 ? ` · ${failed} failed` : ''}.`, failed > 0 ? 'error' : 'success')
+  }
+
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc'); setPage(1) }
+  }
+
+  function toggleExpand(id) {
+    if (expandedId === id) { setExpandedId(null) }
+    else { setExpandedId(id); setInlineEventId(''); setInlinePublish(false) }
+  }
+
+  const sorted = [...archived].sort((a, b) => {
+    let av = a[sortKey], bv = b[sortKey]
+    if (av == null) return 1; if (bv == null) return -1
+    if (typeof av === 'string') av = av.toLowerCase()
+    if (typeof bv === 'string') bv = bv.toLowerCase()
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
+
+  const totalPages  = Math.max(1, Math.ceil(sorted.length / ARCH_ARCHIVE_PAGE_SIZE))
+  const safePage    = Math.min(page, totalPages)
+  const pageSlice   = sorted.slice((safePage - 1) * ARCH_ARCHIVE_PAGE_SIZE, safePage * ARCH_ARCHIVE_PAGE_SIZE)
+  const activeEvents = events.filter(e => ['ACTIVE', 'UPCOMING'].includes(e.status))
   const RARITY_COLOR = { COMMON: '#8A8A9A', RARE: '#4A9EFF', CLASSIFIED: '#FF2D2D' }
 
-  const inputStyle = {
-    fontFamily: M, fontSize: '11px', background: '#111111',
-    border: '1px solid #222222', color: '#e5e5e5',
-    padding: '5px 10px', outline: 'none',
-  }
-  const selectStyle = { ...inputStyle }
-  const btnPrimary = (disabled) => ({
+  const iS = { fontFamily: M, fontSize: '11px', background: '#0d0d0d', border: '1px solid #222222', color: '#e5e5e5', padding: '5px 10px', outline: 'none' }
+  const btnP = (disabled, pub) => ({
     fontFamily: G, fontSize: '11px', padding: '5px 14px',
-    background: disabled ? '#111111' : 'rgba(249,115,22,0.08)',
-    border: `1px solid ${disabled ? '#222222' : '#f97316'}`,
-    color: disabled ? '#333333' : '#f97316',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    letterSpacing: '0.05em', textTransform: 'uppercase',
+    background: disabled ? '#0d0d0d' : pub ? 'rgba(34,197,94,0.08)' : 'rgba(249,115,22,0.08)',
+    border: `1px solid ${disabled ? '#1f1f1f' : pub ? '#22c55e' : '#f97316'}`,
+    color: disabled ? '#2a2a2a' : pub ? '#22c55e' : '#f97316',
+    cursor: disabled ? 'not-allowed' : 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase',
   })
-  const btnGhost = {
-    fontFamily: G, fontSize: '11px', padding: '5px 14px',
-    background: 'transparent', border: '1px solid #2a2a2a',
-    color: '#555555', cursor: 'pointer',
-    letterSpacing: '0.05em', textTransform: 'uppercase',
-  }
+  const btnG = { fontFamily: G, fontSize: '11px', padding: '5px 10px', background: 'transparent', border: '1px solid #2a2a2a', color: '#555555', cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase' }
+  const thBase = { fontFamily: G, fontSize: '10px', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', padding: '8px 12px', userSelect: 'none', background: 'transparent', border: 'none', textAlign: 'left' }
+
+  const COL_HEADERS = [
+    { key: 'title',         label: 'TITLE' },
+    { key: 'category',      label: 'CATEGORY' },
+    { key: 'rarity',        label: 'RARITY' },
+    { key: 'base_bc_value', label: 'BC' },
+    { key: 'event_name',    label: 'SOURCE EVENT' },
+    { key: 'claim_count',   label: 'CLAIMS' },
+    { key: null,            label: 'ACTIONS' },
+  ]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-      {/* Flash message */}
       {msg && (
         <div style={{
           fontFamily: M, fontSize: '11px', padding: '10px 14px',
           border: `1px solid ${msgType === 'success' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
           background: msgType === 'success' ? 'rgba(34,197,94,0.05)' : 'rgba(239,68,68,0.05)',
           color: msgType === 'success' ? '#22c55e' : '#ef4444',
-        }}>
-          {msg}
-        </div>
+        }}>{msg}</div>
       )}
 
-      {/* Header */}
       <div>
-        <h2 style={{ fontFamily: G, fontSize: '14px', fontWeight: 700, color: '#e5e5e5', letterSpacing: '0.04em' }}>
-          CONTRACT ARCHIVE
-        </h2>
+        <h2 style={{ fontFamily: G, fontSize: '14px', fontWeight: 700, color: '#e5e5e5', letterSpacing: '0.04em' }}>CONTRACT ARCHIVE</h2>
         <p style={{ fontFamily: G, fontSize: '11px', color: '#555555', marginTop: 2 }}>
-          Archive contracts for future reuse. Redeploy any archived contract to an active event as a draft.
+          Archive contracts for future reuse. Click any row to expand and quick-deploy. Redeploy all with one action.
         </p>
       </div>
 
-      {/* Bulk archive section */}
+      {/* Bulk archive */}
       <div style={{ background: '#111111', border: '1px solid #1f1f1f', padding: '16px' }}>
-        <p style={{ fontFamily: G, fontSize: '10px', fontWeight: 600, color: '#f97316', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '4px' }}>
-          ARCHIVE ALL CONTRACTS FROM EVENT
-        </p>
+        <p style={{ fontFamily: G, fontSize: '10px', fontWeight: 600, color: '#f97316', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '4px' }}>ARCHIVE ALL CONTRACTS FROM EVENT</p>
         <p style={{ fontFamily: G, fontSize: '11px', color: '#444444', marginBottom: '12px', lineHeight: 1.5 }}>
-          Move all non-void contracts from a selected event into the archive. Contracts are unpublished and preserved for future reuse.
+          Move all non-void contracts from a selected event into the archive.
         </p>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <select value={bulkEventId} onChange={e => setBulkEventId(e.target.value)} style={selectStyle}>
+          <select value={bulkEventId} onChange={e => setBulkEventId(e.target.value)} style={iS}>
             <option value="">— SELECT EVENT —</option>
             {events.map(e => <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>)}
           </select>
-          <button onClick={handleBulkArchive} disabled={!bulkEventId || bulking} style={btnPrimary(!bulkEventId || bulking)}>
+          <button onClick={handleBulkArchive} disabled={!bulkEventId || bulking} style={btnP(!bulkEventId || bulking, false)}>
             {bulking ? 'ARCHIVING…' : '[ ARCHIVE ALL ]'}
           </button>
         </div>
@@ -3894,9 +3954,18 @@ function ArchiveTab() {
 
       {/* Archive library */}
       <div>
-        <p style={{ fontFamily: G, fontSize: '10px', fontWeight: 600, color: '#444444', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '12px' }}>
-          ARCHIVED LIBRARY — {archived.length} CONTRACT{archived.length !== 1 ? 'S' : ''}
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <p style={{ fontFamily: G, fontSize: '10px', fontWeight: 600, color: '#444444', letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+            ARCHIVED LIBRARY — {archived.length} CONTRACT{archived.length !== 1 ? 'S' : ''}
+            {!loading && archived.length > 0 && <span style={{ color: '#2a2a2a', marginLeft: '12px' }}>PAGE {safePage}/{totalPages}</span>}
+          </p>
+          {!loading && archived.length > 0 && (
+            <button
+              onClick={() => { setRedeployAllOpen(true); setRedeployAllEventId(''); setRedeployAllPublish(false) }}
+              style={{ fontFamily: G, fontSize: '10px', padding: '4px 12px', background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.3)', color: '#f97316', cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase' }}
+            >[ REDEPLOY ALL ]</button>
+          )}
+        </div>
 
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 0' }}>
@@ -3905,90 +3974,210 @@ function ArchiveTab() {
         ) : archived.length === 0 ? (
           <div style={{ background: '#111111', border: '1px solid #1f1f1f', padding: '48px', textAlign: 'center' }}>
             <p style={{ fontFamily: M, fontSize: '12px', color: '#333333', letterSpacing: '0.05em' }}>NO ARCHIVED CONTRACTS</p>
-            <p style={{ fontFamily: G, fontSize: '11px', color: '#2a2a2a', marginTop: '6px' }}>
-              Archive contracts using the tool above or the ARCH button in the Contractor Dashboard.
-            </p>
           </div>
         ) : (
-          <div style={{ background: '#111111', border: '1px solid #1f1f1f', overflowX: 'auto' }}>
-            {/* Header row */}
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 130px 110px 60px 160px 70px 160px', padding: '8px 12px', borderBottom: '1px solid #1f1f1f', background: '#0d0d0d' }}>
-              {['TITLE', 'CATEGORY', 'RARITY', 'BC', 'SOURCE EVENT', 'CLAIMS', 'ACTIONS'].map(h => (
-                <span key={h} style={{ fontFamily: G, fontSize: '10px', fontWeight: 600, color: '#333333', letterSpacing: '0.07em', textTransform: 'uppercase' }}>{h}</span>
-              ))}
-            </div>
-            {archived.map(c => {
-              const rColor = RARITY_COLOR[c.rarity] || '#8A8A9A'
-              return (
-                <div
-                  key={c.id}
-                  style={{
-                    display: 'grid', gridTemplateColumns: '2fr 130px 110px 60px 160px 70px 160px',
-                    padding: '10px 12px', borderBottom: '1px solid #1a1a1a',
-                    alignItems: 'center', borderLeft: `3px solid ${rColor}25`,
-                  }}
-                >
-                  <div style={{ overflow: 'hidden', paddingRight: '8px' }}>
-                    <p style={{ fontFamily: G, fontSize: '12px', color: '#e5e5e5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</p>
-                    {c.event_name && <p style={{ fontFamily: M, fontSize: '10px', color: '#333333', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.creator_username || ''}</p>}
-                  </div>
-                  <span style={{ fontFamily: M, fontSize: '11px', color: '#555555', whiteSpace: 'nowrap' }}>{c.category}</span>
-                  <span style={{ fontFamily: M, fontSize: '11px', color: rColor, whiteSpace: 'nowrap' }}>{c.rarity}</span>
-                  <span style={{ fontFamily: M, fontSize: '12px', fontWeight: 700, color: '#f97316', whiteSpace: 'nowrap' }}>{c.base_bc_value}</span>
-                  <div style={{ overflow: 'hidden', paddingRight: '8px' }}>
-                    <p style={{ fontFamily: G, fontSize: '11px', color: '#888888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.event_name || '—'}</p>
-                    {c.event_status && (
-                      <p style={{ fontFamily: M, fontSize: '9px', letterSpacing: '0.05em', color: c.event_status === 'ACTIVE' ? '#22c55e' : '#333333', marginTop: '2px' }}>{c.event_status}</p>
+          <>
+            <div style={{ background: '#111111', border: '1px solid #1f1f1f', overflowX: 'auto' }}>
+              {/* Sortable header */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 130px 110px 60px 160px 70px 170px', borderBottom: '1px solid #1f1f1f', background: '#0d0d0d' }}>
+                {COL_HEADERS.map(({ key, label }) => (
+                  <button key={label} onClick={() => key && toggleSort(key)}
+                    style={{ ...thBase, color: key ? (sortKey === key ? '#f97316' : '#333333') : '#222222', cursor: key ? 'pointer' : 'default' }}
+                  >
+                    {label}
+                    {key && (sortKey === key
+                      ? <span style={{ marginLeft: 4, color: '#f97316' }}>{sortDir === 'asc' ? '↑' : '↓'}</span>
+                      : <span style={{ marginLeft: 4, color: '#2a2a2a' }}>↕</span>)}
+                  </button>
+                ))}
+              </div>
+
+              {/* Rows */}
+              {pageSlice.map(c => {
+                const rColor = RARITY_COLOR[c.rarity] || '#8A8A9A'
+                const isExpanded = expandedId === c.id
+                return (
+                  <div key={c.id} style={{ borderBottom: '1px solid #1a1a1a', background: isExpanded ? '#0f0f0f' : 'transparent' }}>
+                    {/* Clickable main row */}
+                    <div
+                      style={{
+                        display: 'grid', gridTemplateColumns: '2fr 130px 110px 60px 160px 70px 170px',
+                        padding: '10px 12px', alignItems: 'center',
+                        borderLeft: `3px solid ${rColor}${isExpanded ? '60' : '25'}`,
+                        cursor: 'pointer', userSelect: 'none',
+                      }}
+                      onClick={() => toggleExpand(c.id)}
+                    >
+                      <div style={{ overflow: 'hidden', paddingRight: '8px' }}>
+                        <p style={{ fontFamily: G, fontSize: '12px', color: '#e5e5e5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</p>
+                        {c.creator_username && <p style={{ fontFamily: M, fontSize: '10px', color: '#333333', marginTop: '2px' }}>{c.creator_username}</p>}
+                      </div>
+                      <span style={{ fontFamily: M, fontSize: '11px', color: '#555555', whiteSpace: 'nowrap' }}>{c.category}</span>
+                      <span style={{ fontFamily: M, fontSize: '11px', color: rColor, whiteSpace: 'nowrap' }}>{c.rarity}</span>
+                      <span style={{ fontFamily: M, fontSize: '12px', fontWeight: 700, color: '#f97316', whiteSpace: 'nowrap' }}>{c.base_bc_value}</span>
+                      <div style={{ overflow: 'hidden', paddingRight: '8px' }}>
+                        <p style={{ fontFamily: G, fontSize: '11px', color: '#888888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.event_name || '—'}</p>
+                        {c.event_status && <p style={{ fontFamily: M, fontSize: '9px', letterSpacing: '0.05em', color: c.event_status === 'ACTIVE' ? '#22c55e' : '#333333', marginTop: '2px' }}>{c.event_status}</p>}
+                      </div>
+                      <div>
+                        <p style={{ fontFamily: M, fontSize: '11px', color: '#e5e5e5' }}>{c.claim_count}</p>
+                        {c.intel_count > 0 && <p style={{ fontFamily: M, fontSize: '9px', color: '#333333' }}>{c.intel_count} intel</p>}
+                      </div>
+                      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                        <button onClick={() => { setRedeployTarget(c); setRedeployEventId(''); setRedeployPublish(false) }} style={btnP(false, false)}>REDEPLOY</button>
+                        <button onClick={() => handleUnarchive(c)} title="Restore to original event as unpublished draft" style={btnG}>RESTORE</button>
+                      </div>
+                    </div>
+
+                    {/* Inline expansion */}
+                    {isExpanded && (
+                      <div style={{ padding: '12px 14px', borderTop: '1px solid #1f1f1f', background: '#0a0a0a' }}>
+                        {/* Meta */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '12px' }}>
+                          {c.intel_count > 0 && <span style={{ fontFamily: M, fontSize: '10px', color: '#444444' }}>{c.intel_count} intel drops</span>}
+                          {c.attachment_count > 0 && <span style={{ fontFamily: M, fontSize: '10px', color: '#444444' }}>{c.attachment_count} file{c.attachment_count !== 1 ? 's' : ''}</span>}
+                          {c.archived_at && <span style={{ fontFamily: M, fontSize: '10px', color: '#333333' }}>archived {c.archived_at.slice(0, 10)}</span>}
+                          {c.tags?.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                              {c.tags.map(t => (
+                                <span key={t} style={{ fontFamily: M, fontSize: '9px', padding: '1px 6px', border: '1px solid #222222', color: '#333333' }}>{t}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {/* Quick deploy */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ fontFamily: G, fontSize: '10px', fontWeight: 600, color: '#333333', letterSpacing: '0.07em', textTransform: 'uppercase' }}>QUICK DEPLOY →</span>
+                          <select value={inlineEventId} onChange={e => setInlineEventId(e.target.value)} style={iS} onClick={e => e.stopPropagation()}>
+                            <option value="">— target event —</option>
+                            {activeEvents.map(e => <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>)}
+                          </select>
+                          <div style={{ display: 'flex', border: '1px solid #222222', overflow: 'hidden' }}>
+                            <button onClick={e => { e.stopPropagation(); setInlinePublish(false) }}
+                              style={{ fontFamily: G, fontSize: '10px', padding: '4px 10px', background: !inlinePublish ? 'rgba(255,255,255,0.06)' : 'transparent', border: 'none', color: !inlinePublish ? '#e5e5e5' : '#444444', cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase' }}
+                            >DRAFT</button>
+                            <button onClick={e => { e.stopPropagation(); setInlinePublish(true) }}
+                              style={{ fontFamily: G, fontSize: '10px', padding: '4px 10px', background: inlinePublish ? 'rgba(34,197,94,0.08)' : 'transparent', borderLeft: '1px solid #222222', border: 'none', borderLeft: '1px solid #222222', color: inlinePublish ? '#22c55e' : '#444444', cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase' }}
+                            >PUBLISH</button>
+                          </div>
+                          <button
+                            onClick={e => { e.stopPropagation(); handleInlineDeploy(c) }}
+                            disabled={!inlineEventId || inlineDeploying}
+                            style={btnP(!inlineEventId || inlineDeploying, inlinePublish)}
+                          >
+                            {inlineDeploying ? '…' : inlinePublish ? '[ DEPLOY & PUBLISH ]' : '[ DEPLOY AS DRAFT ]'}
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
-                  <div>
-                    <p style={{ fontFamily: M, fontSize: '11px', color: '#e5e5e5' }}>{c.claim_count}</p>
-                    {c.intel_count > 0 && <p style={{ fontFamily: M, fontSize: '9px', color: '#333333' }}>{c.intel_count} intel</p>}
-                  </div>
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    <button
-                      onClick={() => { setRedeployTarget(c); setRedeployEventId('') }}
-                      style={btnPrimary(false)}
-                    >REDEPLOY</button>
-                    <button onClick={() => handleUnarchive(c)} style={btnGhost}>UN-ARCH</button>
-                  </div>
+                )
+              })}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
+                  style={{ ...btnG, opacity: safePage === 1 ? 0.3 : 1, cursor: safePage === 1 ? 'not-allowed' : 'pointer' }}>← PREV</button>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                    <button key={p} onClick={() => setPage(p)} style={{
+                      fontFamily: M, fontSize: '10px', width: '24px', height: '24px',
+                      background: p === safePage ? 'rgba(249,115,22,0.12)' : 'transparent',
+                      border: `1px solid ${p === safePage ? '#f97316' : '#222222'}`,
+                      color: p === safePage ? '#f97316' : '#444444', cursor: 'pointer',
+                    }}>{p}</button>
+                  ))}
                 </div>
-              )
-            })}
-          </div>
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
+                  style={{ ...btnG, opacity: safePage === totalPages ? 0.3 : 1, cursor: safePage === totalPages ? 'not-allowed' : 'pointer' }}>NEXT →</button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* Redeploy modal (plain conditional — no framer-motion in arch dashboard) */}
-      {redeployTarget && (
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
-          onClick={e => { if (e.target === e.currentTarget) { setRedeployTarget(null); setRedeployEventId('') } }}
+      {/* ── REDEPLOY ALL modal ── */}
+      {redeployAllOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
+          onClick={e => { if (e.target === e.currentTarget && !redeployAllLoading) setRedeployAllOpen(false) }}
         >
           <div style={{ background: '#111111', border: '1px solid #2a2a2a', borderTop: '3px solid #f97316', padding: '24px', width: '100%', maxWidth: '440px' }}>
-            <p style={{ fontFamily: G, fontSize: '10px', fontWeight: 600, color: '#444444', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '6px' }}>REDEPLOY CONTRACT</p>
-            <p style={{ fontFamily: G, fontSize: '16px', fontWeight: 700, color: '#e5e5e5', marginBottom: '4px', lineHeight: 1.3 }}>{redeployTarget.title}</p>
+            <p style={{ fontFamily: G, fontSize: '10px', fontWeight: 600, color: '#444444', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '6px' }}>REDEPLOY ALL ARCHIVED CONTRACTS</p>
+            <p style={{ fontFamily: G, fontSize: '16px', fontWeight: 700, color: '#e5e5e5', marginBottom: '4px' }}>{sorted.length} contract{sorted.length !== 1 ? 's' : ''}</p>
             <p style={{ fontFamily: G, fontSize: '11px', color: '#444444', marginBottom: '20px', lineHeight: 1.5 }}>
-              A fresh copy will be created as a DRAFT in the target event.<br />
-              The archived original is preserved. Intel drops are included.
+              A fresh copy of every archived contract will be created in the target event.<br/>All archived originals are preserved. Intel drops are included.
             </p>
-            <p style={{ fontFamily: G, fontSize: '10px', fontWeight: 600, color: '#444444', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '6px' }}>TARGET EVENT</p>
-            <select
-              value={redeployEventId}
-              onChange={e => setRedeployEventId(e.target.value)}
-              style={{ ...selectStyle, width: '100%', marginBottom: '20px' }}
-            >
+            <p style={{ ...thBase, padding: '0 0 6px' }}>TARGET EVENT</p>
+            <select value={redeployAllEventId} onChange={e => setRedeployAllEventId(e.target.value)} style={{ ...iS, width: '100%', marginBottom: '16px' }} disabled={redeployAllLoading}>
               <option value="">— SELECT TARGET EVENT —</option>
               {activeEvents.map(e => <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>)}
             </select>
+            <p style={{ ...thBase, padding: '0 0 8px' }}>DEPLOY AS</p>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              {[false, true].map(v => (
+                <button key={String(v)} onClick={() => setRedeployAllPublish(v)} disabled={redeployAllLoading}
+                  style={{ flex: 1, fontFamily: G, fontSize: '11px', padding: '8px',
+                    background: redeployAllPublish === v ? (v ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.06)') : 'transparent',
+                    border: `1px solid ${redeployAllPublish === v ? (v ? '#22c55e' : '#555555') : '#2a2a2a'}`,
+                    color: redeployAllPublish === v ? (v ? '#22c55e' : '#e5e5e5') : '#444444',
+                    cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase' }}
+                >{v ? 'PUBLISHED' : 'DRAFT'}</button>
+              ))}
+            </div>
+            {redeployAllLoading && (
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ height: '2px', background: '#1f1f1f', marginBottom: '6px' }}>
+                  <div style={{ height: '100%', background: '#f97316', width: `${redeployAllProgress.total ? (redeployAllProgress.done / redeployAllProgress.total) * 100 : 0}%`, transition: 'width 0.2s' }} />
+                </div>
+                <p style={{ fontFamily: M, fontSize: '10px', color: '#444444', textAlign: 'center' }}>
+                  {redeployAllProgress.done} / {redeployAllProgress.total} deployed…
+                </p>
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button onClick={() => { setRedeployTarget(null); setRedeployEventId('') }} style={btnGhost}>CANCEL</button>
-              <button
-                onClick={handleRedeploy}
-                disabled={!redeployEventId || redeployLoading}
-                style={btnPrimary(!redeployEventId || redeployLoading)}
-              >
-                {redeployLoading ? 'DEPLOYING…' : '[ DEPLOY AS DRAFT ]'}
+              <button onClick={() => setRedeployAllOpen(false)} disabled={redeployAllLoading} style={{ ...btnG, opacity: redeployAllLoading ? 0.4 : 1 }}>CANCEL</button>
+              <button onClick={handleRedeployAll} disabled={!redeployAllEventId || redeployAllLoading} style={btnP(!redeployAllEventId || redeployAllLoading, redeployAllPublish)}>
+                {redeployAllLoading ? `DEPLOYING ${redeployAllProgress.done}/${redeployAllProgress.total}…` : redeployAllPublish ? '[ DEPLOY ALL & PUBLISH ]' : '[ DEPLOY ALL AS DRAFT ]'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Single-contract redeploy modal ── */}
+      {redeployTarget && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
+          onClick={e => { if (e.target === e.currentTarget) { setRedeployTarget(null); setRedeployEventId(''); setRedeployPublish(false) } }}
+        >
+          <div style={{ background: '#111111', border: '1px solid #2a2a2a', borderTop: '3px solid #f97316', padding: '24px', width: '100%', maxWidth: '440px' }}>
+            <p style={{ fontFamily: G, fontSize: '10px', fontWeight: 600, color: '#444444', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '6px' }}>REDEPLOY CONTRACT</p>
+            <p style={{ fontFamily: G, fontSize: '16px', fontWeight: 700, color: '#e5e5e5', marginBottom: '4px', lineHeight: 1.3 }}>{redeployTarget?.title}</p>
+            <p style={{ fontFamily: G, fontSize: '11px', color: '#444444', marginBottom: '20px', lineHeight: 1.5 }}>
+              A fresh copy will be created in the target event. Intel drops are included. The archived original is preserved.
+            </p>
+            <p style={{ ...thBase, padding: '0 0 6px' }}>TARGET EVENT</p>
+            <select value={redeployEventId} onChange={e => setRedeployEventId(e.target.value)} style={{ ...iS, width: '100%', marginBottom: '16px' }}>
+              <option value="">— SELECT TARGET EVENT —</option>
+              {activeEvents.map(e => <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>)}
+            </select>
+            <p style={{ ...thBase, padding: '0 0 8px' }}>DEPLOY AS</p>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              {[false, true].map(v => (
+                <button key={String(v)} onClick={() => setRedeployPublish(v)}
+                  style={{ flex: 1, fontFamily: G, fontSize: '11px', padding: '8px',
+                    background: redeployPublish === v ? (v ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.06)') : 'transparent',
+                    border: `1px solid ${redeployPublish === v ? (v ? '#22c55e' : '#555555') : '#2a2a2a'}`,
+                    color: redeployPublish === v ? (v ? '#22c55e' : '#e5e5e5') : '#444444',
+                    cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase' }}
+                >{v ? 'PUBLISHED' : 'DRAFT'}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button onClick={() => { setRedeployTarget(null); setRedeployEventId(''); setRedeployPublish(false) }} style={btnG}>CANCEL</button>
+              <button onClick={handleRedeploy} disabled={!redeployEventId || redeployLoading} style={btnP(!redeployEventId || redeployLoading, redeployPublish)}>
+                {redeployLoading ? 'DEPLOYING…' : redeployPublish ? '[ DEPLOY & PUBLISH ]' : '[ DEPLOY AS DRAFT ]'}
               </button>
             </div>
           </div>

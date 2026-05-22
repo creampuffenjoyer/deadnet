@@ -687,6 +687,7 @@ async def force_resume_competition(
 
 class RedeployRequest(BaseModel):
     event_id: int
+    publish: bool = False
 
 
 @router.get("/contracts/archive")
@@ -868,7 +869,7 @@ async def redeploy_contract(
         rarity=source.rarity,
         base_bc_value=source.base_bc_value,
         flag=source.flag,
-        is_published=False,
+        is_published=body.publish,
         is_void=False,
         is_archived=False,
         max_attempts=source.max_attempts,

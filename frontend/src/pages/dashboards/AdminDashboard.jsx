@@ -2733,17 +2733,36 @@ function CompetitionTab() {
 // ---------------------------------------------------------------------------
 // ArchiveTab — Browse the contract archive and redeploy to active events
 // ---------------------------------------------------------------------------
+const ARCHIVE_PAGE_SIZE = 15
+
 function ArchiveTab() {
-  const [archived, setArchived] = useState([])
-  const [events, setEvents] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [bulkEventId, setBulkEventId] = useState('')
-  const [bulking, setBulking] = useState(false)
-  const [redeployTarget, setRedeployTarget] = useState(null)
-  const [redeployEventId, setRedeployEventId] = useState('')
-  const [redeployLoading, setRedeployLoading] = useState(false)
-  const [msg, setMsg] = useState('')
+  const [archived,            setArchived]            = useState([])
+  const [events,              setEvents]              = useState([])
+  const [loading,             setLoading]             = useState(true)
+  const [bulkEventId,         setBulkEventId]         = useState('')
+  const [bulking,             setBulking]             = useState(false)
+  // Single-contract modal redeploy
+  const [redeployTarget,      setRedeployTarget]      = useState(null)
+  const [redeployEventId,     setRedeployEventId]     = useState('')
+  const [redeployPublish,     setRedeployPublish]     = useState(false)
+  const [redeployLoading,     setRedeployLoading]     = useState(false)
+  // Inline quick-deploy (expanded row)
+  const [expandedId,          setExpandedId]          = useState(null)
+  const [inlineEventId,       setInlineEventId]       = useState('')
+  const [inlinePublish,       setInlinePublish]       = useState(false)
+  const [inlineDeploying,     setInlineDeploying]     = useState(false)
+  // Redeploy-all
+  const [redeployAllOpen,     setRedeployAllOpen]     = useState(false)
+  const [redeployAllEventId,  setRedeployAllEventId]  = useState('')
+  const [redeployAllPublish,  setRedeployAllPublish]  = useState(false)
+  const [redeployAllLoading,  setRedeployAllLoading]  = useState(false)
+  const [redeployAllProgress, setRedeployAllProgress] = useState({ done: 0, total: 0 })
+  // Flash / sort / page
+  const [msg,     setMsg]     = useState('')
   const [msgType, setMsgType] = useState('success')
+  const [sortKey, setSortKey] = useState('archived_at')
+  const [sortDir, setSortDir] = useState('desc')
+  const [page,    setPage]    = useState(1)
 
   function flash(text, type = 'success') {
     setMsg(text); setMsgType(type)
@@ -2755,6 +2774,7 @@ function ArchiveTab() {
     try {
       const r = await client.get('/admin/contracts/archive')
       setArchived(r.data)
+      setPage(1)
     } catch { flash('Failed to load archive.', 'error') }
     finally { setLoading(false) }
   }
@@ -2781,30 +2801,106 @@ function ArchiveTab() {
   async function handleUnarchive(contract) {
     try {
       await client.post(`/admin/contracts/${contract.id}/archive`)
-      flash(`"${contract.title}" removed from archive.`)
+      flash(`"${contract.title}" restored to its original event as unpublished.`)
       loadArchive()
-    } catch { flash('Failed to un-archive.', 'error') }
+    } catch { flash('Failed to restore contract.', 'error') }
   }
 
   async function handleRedeploy() {
     if (!redeployEventId) return
     setRedeployLoading(true)
     try {
-      await client.post(`/admin/contracts/${redeployTarget.id}/redeploy`, { event_id: parseInt(redeployEventId) })
+      await client.post(`/admin/contracts/${redeployTarget.id}/redeploy`, {
+        event_id: parseInt(redeployEventId), publish: redeployPublish,
+      })
       const evtName = events.find(e => String(e.id) === String(redeployEventId))?.name || 'target event'
-      flash(`"${redeployTarget.title}" redeployed to ${evtName} as DRAFT.`)
-      setRedeployTarget(null)
-      setRedeployEventId('')
+      flash(`"${redeployTarget.title}" deployed to ${evtName} as ${redeployPublish ? 'PUBLISHED' : 'DRAFT'}.`)
+      setRedeployTarget(null); setRedeployEventId(''); setRedeployPublish(false)
     } catch (e) {
       flash(e.response?.data?.detail || 'Redeploy failed.', 'error')
     } finally { setRedeployLoading(false) }
   }
 
-  const RARITY_CFG = {
-    COMMON:     '#8A8A9A',
-    RARE:       '#4A9EFF',
-    CLASSIFIED: '#FF2D2D',
+  async function handleInlineDeploy(contract) {
+    if (!inlineEventId) return
+    setInlineDeploying(true)
+    try {
+      await client.post(`/admin/contracts/${contract.id}/redeploy`, {
+        event_id: parseInt(inlineEventId), publish: inlinePublish,
+      })
+      const evtName = events.find(e => String(e.id) === String(inlineEventId))?.name || 'target event'
+      flash(`"${contract.title}" deployed to ${evtName} as ${inlinePublish ? 'PUBLISHED' : 'DRAFT'}.`)
+      setExpandedId(null); setInlineEventId(''); setInlinePublish(false)
+    } catch (e) {
+      flash(e.response?.data?.detail || 'Deploy failed.', 'error')
+    } finally { setInlineDeploying(false) }
   }
+
+  async function handleRedeployAll() {
+    if (!redeployAllEventId || sorted.length === 0) return
+    setRedeployAllLoading(true)
+    let done = 0, failed = 0
+    setRedeployAllProgress({ done: 0, total: sorted.length })
+    for (const c of sorted) {
+      try {
+        await client.post(`/admin/contracts/${c.id}/redeploy`, {
+          event_id: parseInt(redeployAllEventId), publish: redeployAllPublish,
+        })
+        done++
+      } catch { failed++ }
+      setRedeployAllProgress({ done: done + failed, total: sorted.length })
+    }
+    setRedeployAllLoading(false)
+    setRedeployAllOpen(false); setRedeployAllEventId(''); setRedeployAllPublish(false)
+    const evtName = events.find(e => String(e.id) === String(redeployAllEventId))?.name || 'target event'
+    flash(
+      `${done} contract(s) deployed to ${evtName}${failed > 0 ? ` · ${failed} failed` : ''}.`,
+      failed > 0 ? 'error' : 'success'
+    )
+  }
+
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc'); setPage(1) }
+  }
+
+  function toggleExpand(id) {
+    if (expandedId === id) { setExpandedId(null) }
+    else { setExpandedId(id); setInlineEventId(''); setInlinePublish(false) }
+  }
+
+  const sorted = [...archived].sort((a, b) => {
+    let av = a[sortKey], bv = b[sortKey]
+    if (av == null) return 1; if (bv == null) return -1
+    if (typeof av === 'string') av = av.toLowerCase()
+    if (typeof bv === 'string') bv = bv.toLowerCase()
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / ARCHIVE_PAGE_SIZE))
+  const safePage   = Math.min(page, totalPages)
+  const pageSlice  = sorted.slice((safePage - 1) * ARCHIVE_PAGE_SIZE, safePage * ARCHIVE_PAGE_SIZE)
+  const activeEvents = events.filter(e => ['ACTIVE', 'UPCOMING'].includes(e.status))
+
+  const RARITY_CFG = { COMMON: '#8A8A9A', RARE: '#4A9EFF', CLASSIFIED: '#FF2D2D' }
+  const COL_HEADERS = [
+    { key: 'title',         label: 'TITLE' },
+    { key: 'category',      label: 'CATEGORY' },
+    { key: 'rarity',        label: 'RARITY' },
+    { key: 'base_bc_value', label: 'BC' },
+    { key: 'event_name',    label: 'SOURCE EVENT' },
+    { key: 'claim_count',   label: 'CLAIMS' },
+    { key: null,            label: 'ACTIONS' },
+  ]
+
+  function SortInd({ col }) {
+    if (!col || sortKey !== col) return <span className="text-ghost/20 ml-1">↕</span>
+    return <span className="text-ember ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
+  }
+
+  const selectCls = 'bg-void border border-ghost/20 rounded-sm px-2 py-1 font-mono text-xs text-bone focus:outline-none focus:border-ember'
 
   return (
     <div className="space-y-6">
@@ -2823,19 +2919,12 @@ function ArchiveTab() {
           Select an event to move all its contracts into the archive. Archived contracts are unpublished and preserved for future reuse.
         </p>
         <div className="flex items-center gap-3 flex-wrap">
-          <select
-            value={bulkEventId}
-            onChange={e => setBulkEventId(e.target.value)}
-            className="bg-abyss border border-ghost/20 rounded-sm px-3 py-1.5 font-mono text-xs text-bone focus:outline-none focus:border-ember"
-          >
+          <select value={bulkEventId} onChange={e => setBulkEventId(e.target.value)} className={selectCls}>
             <option value="">— SELECT EVENT —</option>
-            {events.map(e => (
-              <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>
-            ))}
+            {events.map(e => <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>)}
           </select>
           <button
-            onClick={handleBulkArchive}
-            disabled={!bulkEventId || bulking}
+            onClick={handleBulkArchive} disabled={!bulkEventId || bulking}
             className="font-mono text-xs text-ember border border-ember/40 hover:border-ember hover:bg-ember/10 px-4 py-2 rounded-sm tracking-widest transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {bulking ? 'ARCHIVING...' : '[ ARCHIVE ALL ]'}
@@ -2845,126 +2934,293 @@ function ArchiveTab() {
 
       {/* Archive library */}
       <div>
-        <p className="font-mono text-[10px] text-ghost tracking-widest mb-3">
-          ARCHIVED LIBRARY — {archived.length} CONTRACT{archived.length !== 1 ? 'S' : ''}
-        </p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="font-mono text-[10px] text-ghost tracking-widest">
+            ARCHIVED LIBRARY — {archived.length} CONTRACT{archived.length !== 1 ? 'S' : ''}
+            {!loading && archived.length > 0 && <span className="text-ghost/30 ml-3">PAGE {safePage}/{totalPages}</span>}
+          </p>
+          {!loading && archived.length > 0 && (
+            <button
+              onClick={() => { setRedeployAllOpen(true); setRedeployAllEventId(''); setRedeployAllPublish(false) }}
+              className="font-mono text-[10px] text-flare border border-flare/30 hover:border-flare hover:bg-flare/5 px-3 py-1 rounded-sm tracking-widest transition-all"
+            >
+              [ REDEPLOY ALL ]
+            </button>
+          )}
+        </div>
 
         {loading ? (
           <p className="font-mono text-xs text-ghost animate-pulse py-8 text-center">PULLING ARCHIVE...</p>
         ) : archived.length === 0 ? (
           <div className="border border-ghost/20 rounded-sm py-12 text-center space-y-2">
             <p className="font-mono text-xs text-ghost tracking-widest">NO ARCHIVED CONTRACTS</p>
-            <p className="font-mono text-[10px] text-ghost/40">
-              Archive contracts using the tool above or the ARCH button in the Contractor Dashboard.
-            </p>
+            <p className="font-mono text-[10px] text-ghost/40">Archive contracts using the tool above or the ARCH button in the Contractor Dashboard.</p>
           </div>
         ) : (
-          <div className="border border-ghost/20 rounded-sm overflow-x-auto">
-            <div className="grid grid-cols-[2fr_120px_110px_60px_140px_80px_160px] px-4 py-2 border-b border-ghost/10 bg-abyss min-w-[900px]">
-              {['TITLE', 'CATEGORY', 'RARITY', 'BC', 'SOURCE EVENT', 'CLAIMS', 'ACTIONS'].map(h => (
-                <span key={h} className="font-mono text-[10px] text-ghost/60 tracking-widest">{h}</span>
-              ))}
-            </div>
-            <div className="divide-y divide-ghost/10">
-              {archived.map(c => {
-                const rColor = RARITY_CFG[c.rarity] || '#8A8A9A'
-                return (
-                  <div
-                    key={c.id}
-                    className="grid grid-cols-[2fr_120px_110px_60px_140px_80px_160px] px-4 py-3 items-center min-w-[900px] hover:bg-abyss/40 transition-colors"
-                    style={{ borderLeft: `3px solid ${rColor}30` }}
+          <>
+            <div className="border border-ghost/20 rounded-sm overflow-x-auto">
+              {/* Sortable header */}
+              <div className="grid grid-cols-[2fr_120px_110px_60px_140px_80px_170px] px-4 py-2 border-b border-ghost/10 bg-abyss min-w-[900px]">
+                {COL_HEADERS.map(({ key, label }) => (
+                  <button
+                    key={label}
+                    onClick={() => key && toggleSort(key)}
+                    className={`font-mono text-[10px] tracking-widest text-left transition-colors ${
+                      key ? 'hover:text-ghost cursor-pointer' : 'cursor-default'
+                    } ${key && sortKey === key ? 'text-ember' : 'text-ghost/50'}`}
                   >
-                    <div className="min-w-0 pr-2">
-                      <p className="font-mono text-sm text-bone truncate">{c.title}</p>
-                      {c.tags?.length > 0 && (
-                        <p className="font-mono text-[10px] text-ghost/40 truncate mt-0.5">{c.tags.slice(0, 3).join(', ')}</p>
-                      )}
+                    {label}<SortInd col={key} />
+                  </button>
+                ))}
+              </div>
+
+              {/* Rows */}
+              {pageSlice.map(c => {
+                const rColor = RARITY_CFG[c.rarity] || '#8A8A9A'
+                const isExpanded = expandedId === c.id
+                return (
+                  <div key={c.id} className={`border-b border-ghost/10 transition-colors ${isExpanded ? 'bg-abyss/50' : ''}`}>
+                    {/* Main clickable row */}
+                    <div
+                      className="grid grid-cols-[2fr_120px_110px_60px_140px_80px_170px] px-4 py-3 items-center min-w-[900px] hover:bg-abyss/40 transition-colors cursor-pointer select-none"
+                      style={{ borderLeft: `3px solid ${rColor}${isExpanded ? '70' : '30'}` }}
+                      onClick={() => toggleExpand(c.id)}
+                    >
+                      <div className="min-w-0 pr-2">
+                        <p className="font-mono text-sm text-bone truncate">{c.title}</p>
+                        {c.tags?.length > 0 && (
+                          <p className="font-mono text-[10px] text-ghost/40 truncate mt-0.5">{c.tags.slice(0, 3).join(', ')}</p>
+                        )}
+                      </div>
+                      <span className="font-mono text-xs text-ghost whitespace-nowrap">{c.category}</span>
+                      <span className="font-mono text-xs whitespace-nowrap" style={{ color: rColor }}>{c.rarity}</span>
+                      <span className="font-mono text-sm font-bold text-ember whitespace-nowrap">{c.base_bc_value}</span>
+                      <div className="min-w-0 pr-2">
+                        <p className="font-mono text-[10px] text-bone truncate">{c.event_name || '—'}</p>
+                        {c.event_status && (
+                          <p className={`font-mono text-[9px] tracking-widest ${c.event_status === 'ACTIVE' ? 'text-success' : 'text-ghost/40'}`}>
+                            {c.event_status}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-mono text-xs text-bone">{c.claim_count}</p>
+                        {c.intel_count > 0 && <p className="font-mono text-[10px] text-ghost/40">{c.intel_count} intel</p>}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => { setRedeployTarget(c); setRedeployEventId(''); setRedeployPublish(false) }}
+                          className="font-mono text-[10px] text-ember border border-ember/30 hover:border-ember px-2 py-0.5 rounded-sm transition-all whitespace-nowrap"
+                        >REDEPLOY</button>
+                        <button
+                          onClick={() => handleUnarchive(c)}
+                          title="Remove from archive — restores to original event as unpublished draft"
+                          className="font-mono text-[10px] text-ghost hover:text-bone border border-ghost/20 hover:border-ghost/50 px-2 py-0.5 rounded-sm transition-all whitespace-nowrap"
+                        >RESTORE</button>
+                      </div>
                     </div>
-                    <span className="font-mono text-xs text-ghost whitespace-nowrap">{c.category}</span>
-                    <span className="font-mono text-xs whitespace-nowrap" style={{ color: rColor }}>{c.rarity}</span>
-                    <span className="font-mono text-sm font-bold text-ember whitespace-nowrap">{c.base_bc_value}</span>
-                    <div className="min-w-0 pr-2">
-                      <p className="font-mono text-[10px] text-bone truncate">{c.event_name || '—'}</p>
-                      {c.event_status && (
-                        <p className={`font-mono text-[9px] tracking-widest ${c.event_status === 'ACTIVE' ? 'text-success' : 'text-ghost/40'}`}>
-                          {c.event_status}
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-mono text-xs text-bone">{c.claim_count}</p>
-                      {c.intel_count > 0 && <p className="font-mono text-[10px] text-ghost/40">{c.intel_count} intel</p>}
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <button
-                        onClick={() => { setRedeployTarget(c); setRedeployEventId('') }}
-                        className="font-mono text-[10px] text-ember border border-ember/30 hover:border-ember px-2 py-0.5 rounded-sm transition-all whitespace-nowrap"
-                      >
-                        REDEPLOY
-                      </button>
-                      <button
-                        onClick={() => handleUnarchive(c)}
-                        className="font-mono text-[10px] text-ghost hover:text-bone border border-ghost/20 hover:border-ghost/50 px-2 py-0.5 rounded-sm transition-all whitespace-nowrap"
-                      >
-                        UN-ARCH
-                      </button>
-                    </div>
+
+                    {/* Inline expansion panel */}
+                    {isExpanded && (
+                      <div className="px-4 py-3 border-t border-ghost/5 bg-void/30 min-w-[900px]">
+                        {/* Meta row */}
+                        <div className="flex flex-wrap gap-x-5 gap-y-1 mb-3">
+                          {c.intel_count > 0 && <span className="font-mono text-[10px] text-ghost/50">{c.intel_count} intel drops</span>}
+                          {c.attachment_count > 0 && <span className="font-mono text-[10px] text-ghost/50">{c.attachment_count} file{c.attachment_count !== 1 ? 's' : ''}</span>}
+                          {c.creator_username && <span className="font-mono text-[10px] text-ghost/50">by {c.creator_username}</span>}
+                          {c.archived_at && <span className="font-mono text-[10px] text-ghost/40">archived {c.archived_at.slice(0, 10)}</span>}
+                          {c.tags?.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {c.tags.map(t => (
+                                <span key={t} className="font-mono text-[9px] px-1.5 py-0.5 border border-ghost/15 text-ghost/40 rounded-sm">{t}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {/* Quick deploy */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-[10px] text-ghost/40 tracking-widest">QUICK DEPLOY →</span>
+                          <select
+                            value={inlineEventId}
+                            onChange={e => setInlineEventId(e.target.value)}
+                            className={selectCls}
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <option value="">— target event —</option>
+                            {activeEvents.map(e => <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>)}
+                          </select>
+                          <div className="flex rounded-sm overflow-hidden border border-ghost/20">
+                            <button
+                              onClick={e => { e.stopPropagation(); setInlinePublish(false) }}
+                              className={`font-mono text-[10px] px-2 py-1 transition-colors ${!inlinePublish ? 'bg-ghost/15 text-bone' : 'text-ghost/40 hover:text-ghost'}`}
+                            >DRAFT</button>
+                            <button
+                              onClick={e => { e.stopPropagation(); setInlinePublish(true) }}
+                              className={`font-mono text-[10px] px-2 py-1 border-l border-ghost/20 transition-colors ${inlinePublish ? 'bg-success/10 text-success' : 'text-ghost/40 hover:text-ghost'}`}
+                            >PUBLISH</button>
+                          </div>
+                          <button
+                            onClick={e => { e.stopPropagation(); handleInlineDeploy(c) }}
+                            disabled={!inlineEventId || inlineDeploying}
+                            className={`font-mono text-[10px] px-3 py-1 rounded-sm border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                              inlinePublish
+                                ? 'text-success border-success/40 hover:border-success hover:bg-success/10'
+                                : 'text-ember border-ember/40 hover:border-ember hover:bg-ember/10'
+                            }`}
+                          >
+                            {inlineDeploying ? '...' : inlinePublish ? '[ DEPLOY & PUBLISH ]' : '[ DEPLOY AS DRAFT ]'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })}
             </div>
-          </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-3">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
+                  className="font-mono text-[10px] text-ghost border border-ghost/20 hover:border-ghost/50 hover:text-bone px-3 py-1 rounded-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >← PREV</button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                    <button key={p} onClick={() => setPage(p)}
+                      className={`font-mono text-[10px] w-6 h-6 rounded-sm transition-all ${
+                        p === safePage ? 'bg-ember/20 text-ember border border-ember/40' : 'text-ghost/50 hover:text-bone border border-transparent hover:border-ghost/20'
+                      }`}
+                    >{p}</button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
+                  className="font-mono text-[10px] text-ghost border border-ghost/20 hover:border-ghost/50 hover:text-bone px-3 py-1 rounded-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >NEXT →</button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* Redeploy modal */}
+      {/* ── REDEPLOY ALL modal ── */}
+      <AnimatePresence>
+        {redeployAllOpen && (
+          <>
+            <motion.div className="fixed inset-0 z-50 bg-void/70" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => !redeployAllLoading && setRedeployAllOpen(false)} />
+            <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.15 }}
+            >
+              <div className="bg-abyss border border-ghost/30 rounded-sm p-6 w-full max-w-md pointer-events-auto" style={{ borderTop: '3px solid #FF6B00' }}>
+                <p className="font-mono text-[10px] text-ghost tracking-widest mb-1">REDEPLOY ALL ARCHIVED CONTRACTS</p>
+                <p className="font-mono text-lg text-bone font-bold mb-1">{sorted.length} contract{sorted.length !== 1 ? 's' : ''}</p>
+                <p className="font-mono text-[10px] text-ghost/50 mb-5 leading-relaxed">
+                  A fresh copy of every archived contract will be created in the target event.<br/>
+                  All archived originals are preserved. Intel drops are included.
+                </p>
+                <label className="font-mono text-[10px] text-ghost tracking-widest block mb-2">TARGET EVENT</label>
+                <select value={redeployAllEventId} onChange={e => setRedeployAllEventId(e.target.value)}
+                  className="w-full bg-void border border-ghost/30 rounded-sm px-3 py-2 font-mono text-xs text-bone focus:outline-none focus:border-ember mb-4"
+                  disabled={redeployAllLoading}
+                >
+                  <option value="">— SELECT TARGET EVENT —</option>
+                  {activeEvents.map(e => <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>)}
+                </select>
+                <label className="font-mono text-[10px] text-ghost tracking-widest block mb-2">DEPLOY AS</label>
+                <div className="flex gap-2 mb-5">
+                  {[false, true].map(v => (
+                    <button key={String(v)} onClick={() => setRedeployAllPublish(v)} disabled={redeployAllLoading}
+                      className={`flex-1 font-mono text-xs py-2 rounded-sm border transition-all disabled:opacity-50 ${
+                        redeployAllPublish === v
+                          ? v ? 'border-success/60 text-success bg-success/10' : 'border-ghost/60 text-bone bg-ghost/10'
+                          : 'border-ghost/20 text-ghost/50 hover:border-ghost/40'
+                      }`}
+                    >{v ? 'PUBLISHED' : 'DRAFT'}</button>
+                  ))}
+                </div>
+                {redeployAllLoading && (
+                  <div className="mb-4">
+                    <div className="h-1 bg-ghost/10 rounded-full overflow-hidden mb-1">
+                      <div
+                        className="h-full bg-ember transition-all"
+                        style={{ width: `${redeployAllProgress.total ? (redeployAllProgress.done / redeployAllProgress.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                    <p className="font-mono text-[10px] text-ghost/50 text-center">
+                      {redeployAllProgress.done} / {redeployAllProgress.total} deployed…
+                    </p>
+                  </div>
+                )}
+                <div className="flex justify-end gap-3">
+                  <button onClick={() => setRedeployAllOpen(false)} disabled={redeployAllLoading}
+                    className="font-mono text-xs text-ghost border border-ghost/20 px-4 py-2 rounded-sm hover:border-ghost transition-all disabled:opacity-40"
+                  >CANCEL</button>
+                  <button
+                    onClick={handleRedeployAll}
+                    disabled={!redeployAllEventId || redeployAllLoading}
+                    className={`font-mono text-xs px-4 py-2 rounded-sm border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                      redeployAllPublish
+                        ? 'text-success border-success/40 hover:border-success hover:bg-success/10'
+                        : 'text-flare border-flare/40 hover:border-flare hover:bg-flare/10'
+                    }`}
+                  >
+                    {redeployAllLoading ? `DEPLOYING ${redeployAllProgress.done}/${redeployAllProgress.total}...` : redeployAllPublish ? '[ DEPLOY ALL & PUBLISH ]' : '[ DEPLOY ALL AS DRAFT ]'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ── Single-contract redeploy modal ── */}
       <AnimatePresence>
         {redeployTarget && (
           <>
-            <motion.div
-              className="fixed inset-0 z-50 bg-void/70"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => { setRedeployTarget(null); setRedeployEventId('') }}
-            />
-            <motion.div
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
-              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.15 }}
+            <motion.div className="fixed inset-0 z-50 bg-void/70" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => { setRedeployTarget(null); setRedeployEventId(''); setRedeployPublish(false) }} />
+            <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.15 }}
             >
-              <div
-                className="bg-abyss border border-ghost/30 rounded-sm p-6 w-full max-w-md pointer-events-auto"
-                style={{ borderTop: '3px solid #FF4500' }}
-              >
+              <div className="bg-abyss border border-ghost/30 rounded-sm p-6 w-full max-w-md pointer-events-auto" style={{ borderTop: '3px solid #FF4500' }}>
                 <p className="font-mono text-[10px] text-ghost tracking-widest mb-1">REDEPLOY CONTRACT</p>
-                <p className="font-mono text-lg text-bone font-bold mb-1 leading-snug">{redeployTarget.title}</p>
+                <p className="font-mono text-lg text-bone font-bold mb-1 leading-snug">{redeployTarget?.title}</p>
                 <p className="font-mono text-[10px] text-ghost/50 mb-5 leading-relaxed">
-                  A fresh copy will be created as a DRAFT in the target event.<br />
-                  The archived original is preserved. Intel drops are included.
+                  A fresh copy will be created in the target event. Intel drops are included.<br />The archived original is preserved.
                 </p>
                 <label className="font-mono text-[10px] text-ghost tracking-widest block mb-2">TARGET EVENT</label>
-                <select
-                  value={redeployEventId}
-                  onChange={e => setRedeployEventId(e.target.value)}
-                  className="w-full bg-void border border-ghost/30 rounded-sm px-3 py-2 font-mono text-xs text-bone focus:outline-none focus:border-ember mb-5"
+                <select value={redeployEventId} onChange={e => setRedeployEventId(e.target.value)}
+                  className="w-full bg-void border border-ghost/30 rounded-sm px-3 py-2 font-mono text-xs text-bone focus:outline-none focus:border-ember mb-4"
                 >
                   <option value="">— SELECT TARGET EVENT —</option>
-                  {events.filter(e => ['ACTIVE', 'UPCOMING'].includes(e.status)).map(e => (
-                    <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>
-                  ))}
+                  {activeEvents.map(e => <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>)}
                 </select>
+                <label className="font-mono text-[10px] text-ghost tracking-widest block mb-2">DEPLOY AS</label>
+                <div className="flex gap-2 mb-5">
+                  {[false, true].map(v => (
+                    <button key={String(v)} onClick={() => setRedeployPublish(v)}
+                      className={`flex-1 font-mono text-xs py-2 rounded-sm border transition-all ${
+                        redeployPublish === v
+                          ? v ? 'border-success/60 text-success bg-success/10' : 'border-ghost/60 text-bone bg-ghost/10'
+                          : 'border-ghost/20 text-ghost/50 hover:border-ghost/40'
+                      }`}
+                    >{v ? 'PUBLISHED' : 'DRAFT'}</button>
+                  ))}
+                </div>
                 <div className="flex justify-end gap-3">
-                  <button
-                    onClick={() => { setRedeployTarget(null); setRedeployEventId('') }}
+                  <button onClick={() => { setRedeployTarget(null); setRedeployEventId(''); setRedeployPublish(false) }}
                     className="font-mono text-xs text-ghost border border-ghost/20 px-4 py-2 rounded-sm hover:border-ghost transition-all"
+                  >CANCEL</button>
+                  <button onClick={handleRedeploy} disabled={!redeployEventId || redeployLoading}
+                    className={`font-mono text-xs px-4 py-2 rounded-sm border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                      redeployPublish
+                        ? 'text-success border-success/40 hover:border-success hover:bg-success/10'
+                        : 'text-ember border-ember/40 hover:border-ember hover:bg-ember/10'
+                    }`}
                   >
-                    CANCEL
-                  </button>
-                  <button
-                    onClick={handleRedeploy}
-                    disabled={!redeployEventId || redeployLoading}
-                    className="font-mono text-xs text-ember border border-ember/40 hover:border-ember hover:bg-ember/10 px-4 py-2 rounded-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {redeployLoading ? 'DEPLOYING...' : '[ DEPLOY AS DRAFT ]'}
+                    {redeployLoading ? 'DEPLOYING...' : redeployPublish ? '[ DEPLOY & PUBLISH ]' : '[ DEPLOY AS DRAFT ]'}
                   </button>
                 </div>
               </div>
