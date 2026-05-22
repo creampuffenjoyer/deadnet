@@ -2731,6 +2731,252 @@ function CompetitionTab() {
 }
 
 // ---------------------------------------------------------------------------
+// ArchiveTab — Browse the contract archive and redeploy to active events
+// ---------------------------------------------------------------------------
+function ArchiveTab() {
+  const [archived, setArchived] = useState([])
+  const [events, setEvents] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [bulkEventId, setBulkEventId] = useState('')
+  const [bulking, setBulking] = useState(false)
+  const [redeployTarget, setRedeployTarget] = useState(null)
+  const [redeployEventId, setRedeployEventId] = useState('')
+  const [redeployLoading, setRedeployLoading] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [msgType, setMsgType] = useState('success')
+
+  function flash(text, type = 'success') {
+    setMsg(text); setMsgType(type)
+    setTimeout(() => setMsg(''), 4000)
+  }
+
+  async function loadArchive() {
+    setLoading(true)
+    try {
+      const r = await client.get('/admin/contracts/archive')
+      setArchived(r.data)
+    } catch { flash('Failed to load archive.', 'error') }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    loadArchive()
+    client.get('/events').then(r => setEvents(r.data)).catch(() => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleBulkArchive() {
+    if (!bulkEventId) return
+    setBulking(true)
+    try {
+      const r = await client.post(`/admin/events/${bulkEventId}/archive-contracts`)
+      const skippedNote = r.data.skipped > 0 ? ` (${r.data.skipped} skipped — not owned by your org)` : ''
+      flash(`${r.data.archived} contract(s) archived.${skippedNote}`)
+      setBulkEventId('')
+      loadArchive()
+    } catch (e) {
+      flash(e.response?.data?.detail || 'Bulk archive failed.', 'error')
+    } finally { setBulking(false) }
+  }
+
+  async function handleUnarchive(contract) {
+    try {
+      await client.post(`/admin/contracts/${contract.id}/archive`)
+      flash(`"${contract.title}" removed from archive.`)
+      loadArchive()
+    } catch { flash('Failed to un-archive.', 'error') }
+  }
+
+  async function handleRedeploy() {
+    if (!redeployEventId) return
+    setRedeployLoading(true)
+    try {
+      await client.post(`/admin/contracts/${redeployTarget.id}/redeploy`, { event_id: parseInt(redeployEventId) })
+      const evtName = events.find(e => String(e.id) === String(redeployEventId))?.name || 'target event'
+      flash(`"${redeployTarget.title}" redeployed to ${evtName} as DRAFT.`)
+      setRedeployTarget(null)
+      setRedeployEventId('')
+    } catch (e) {
+      flash(e.response?.data?.detail || 'Redeploy failed.', 'error')
+    } finally { setRedeployLoading(false) }
+  }
+
+  const RARITY_CFG = {
+    COMMON:     '#8A8A9A',
+    RARE:       '#4A9EFF',
+    CLASSIFIED: '#FF2D2D',
+  }
+
+  return (
+    <div className="space-y-6">
+      {msg && (
+        <div className={`font-mono text-xs px-4 py-3 rounded-sm border ${
+          msgType === 'success' ? 'text-success border-success/30 bg-success/5' : 'text-danger border-danger/30 bg-danger/5'
+        }`}>
+          {msg}
+        </div>
+      )}
+
+      {/* Bulk archive from event */}
+      <div className="border border-ghost/20 rounded-sm p-4">
+        <p className="font-mono text-[10px] text-ember tracking-widest mb-1">ARCHIVE ALL CONTRACTS FROM EVENT</p>
+        <p className="font-mono text-[10px] text-ghost/50 mb-4 leading-relaxed">
+          Select an event to move all its contracts into the archive. Archived contracts are unpublished and preserved for future reuse.
+        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <select
+            value={bulkEventId}
+            onChange={e => setBulkEventId(e.target.value)}
+            className="bg-abyss border border-ghost/20 rounded-sm px-3 py-1.5 font-mono text-xs text-bone focus:outline-none focus:border-ember"
+          >
+            <option value="">— SELECT EVENT —</option>
+            {events.map(e => (
+              <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>
+            ))}
+          </select>
+          <button
+            onClick={handleBulkArchive}
+            disabled={!bulkEventId || bulking}
+            className="font-mono text-xs text-ember border border-ember/40 hover:border-ember hover:bg-ember/10 px-4 py-2 rounded-sm tracking-widest transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {bulking ? 'ARCHIVING...' : '[ ARCHIVE ALL ]'}
+          </button>
+        </div>
+      </div>
+
+      {/* Archive library */}
+      <div>
+        <p className="font-mono text-[10px] text-ghost tracking-widest mb-3">
+          ARCHIVED LIBRARY — {archived.length} CONTRACT{archived.length !== 1 ? 'S' : ''}
+        </p>
+
+        {loading ? (
+          <p className="font-mono text-xs text-ghost animate-pulse py-8 text-center">PULLING ARCHIVE...</p>
+        ) : archived.length === 0 ? (
+          <div className="border border-ghost/20 rounded-sm py-12 text-center space-y-2">
+            <p className="font-mono text-xs text-ghost tracking-widest">NO ARCHIVED CONTRACTS</p>
+            <p className="font-mono text-[10px] text-ghost/40">
+              Archive contracts using the tool above or the ARCH button in the Contractor Dashboard.
+            </p>
+          </div>
+        ) : (
+          <div className="border border-ghost/20 rounded-sm overflow-x-auto">
+            <div className="grid grid-cols-[2fr_120px_110px_60px_140px_80px_160px] px-4 py-2 border-b border-ghost/10 bg-abyss min-w-[900px]">
+              {['TITLE', 'CATEGORY', 'RARITY', 'BC', 'SOURCE EVENT', 'CLAIMS', 'ACTIONS'].map(h => (
+                <span key={h} className="font-mono text-[10px] text-ghost/60 tracking-widest">{h}</span>
+              ))}
+            </div>
+            <div className="divide-y divide-ghost/10">
+              {archived.map(c => {
+                const rColor = RARITY_CFG[c.rarity] || '#8A8A9A'
+                return (
+                  <div
+                    key={c.id}
+                    className="grid grid-cols-[2fr_120px_110px_60px_140px_80px_160px] px-4 py-3 items-center min-w-[900px] hover:bg-abyss/40 transition-colors"
+                    style={{ borderLeft: `3px solid ${rColor}30` }}
+                  >
+                    <div className="min-w-0 pr-2">
+                      <p className="font-mono text-sm text-bone truncate">{c.title}</p>
+                      {c.tags?.length > 0 && (
+                        <p className="font-mono text-[10px] text-ghost/40 truncate mt-0.5">{c.tags.slice(0, 3).join(', ')}</p>
+                      )}
+                    </div>
+                    <span className="font-mono text-xs text-ghost whitespace-nowrap">{c.category}</span>
+                    <span className="font-mono text-xs whitespace-nowrap" style={{ color: rColor }}>{c.rarity}</span>
+                    <span className="font-mono text-sm font-bold text-ember whitespace-nowrap">{c.base_bc_value}</span>
+                    <div className="min-w-0 pr-2">
+                      <p className="font-mono text-[10px] text-bone truncate">{c.event_name || '—'}</p>
+                      {c.event_status && (
+                        <p className={`font-mono text-[9px] tracking-widest ${c.event_status === 'ACTIVE' ? 'text-success' : 'text-ghost/40'}`}>
+                          {c.event_status}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-mono text-xs text-bone">{c.claim_count}</p>
+                      {c.intel_count > 0 && <p className="font-mono text-[10px] text-ghost/40">{c.intel_count} intel</p>}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        onClick={() => { setRedeployTarget(c); setRedeployEventId('') }}
+                        className="font-mono text-[10px] text-ember border border-ember/30 hover:border-ember px-2 py-0.5 rounded-sm transition-all whitespace-nowrap"
+                      >
+                        REDEPLOY
+                      </button>
+                      <button
+                        onClick={() => handleUnarchive(c)}
+                        className="font-mono text-[10px] text-ghost hover:text-bone border border-ghost/20 hover:border-ghost/50 px-2 py-0.5 rounded-sm transition-all whitespace-nowrap"
+                      >
+                        UN-ARCH
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Redeploy modal */}
+      <AnimatePresence>
+        {redeployTarget && (
+          <>
+            <motion.div
+              className="fixed inset-0 z-50 bg-void/70"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => { setRedeployTarget(null); setRedeployEventId('') }}
+            />
+            <motion.div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.15 }}
+            >
+              <div
+                className="bg-abyss border border-ghost/30 rounded-sm p-6 w-full max-w-md pointer-events-auto"
+                style={{ borderTop: '3px solid #FF4500' }}
+              >
+                <p className="font-mono text-[10px] text-ghost tracking-widest mb-1">REDEPLOY CONTRACT</p>
+                <p className="font-mono text-lg text-bone font-bold mb-1 leading-snug">{redeployTarget.title}</p>
+                <p className="font-mono text-[10px] text-ghost/50 mb-5 leading-relaxed">
+                  A fresh copy will be created as a DRAFT in the target event.<br />
+                  The archived original is preserved. Intel drops are included.
+                </p>
+                <label className="font-mono text-[10px] text-ghost tracking-widest block mb-2">TARGET EVENT</label>
+                <select
+                  value={redeployEventId}
+                  onChange={e => setRedeployEventId(e.target.value)}
+                  className="w-full bg-void border border-ghost/30 rounded-sm px-3 py-2 font-mono text-xs text-bone focus:outline-none focus:border-ember mb-5"
+                >
+                  <option value="">— SELECT TARGET EVENT —</option>
+                  {events.filter(e => ['ACTIVE', 'UPCOMING'].includes(e.status)).map(e => (
+                    <option key={e.id} value={e.id}>{e.name} [{e.status}]</option>
+                  ))}
+                </select>
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => { setRedeployTarget(null); setRedeployEventId('') }}
+                    className="font-mono text-xs text-ghost border border-ghost/20 px-4 py-2 rounded-sm hover:border-ghost transition-all"
+                  >
+                    CANCEL
+                  </button>
+                  <button
+                    onClick={handleRedeploy}
+                    disabled={!redeployEventId || redeployLoading}
+                    className="font-mono text-xs text-ember border border-ember/40 hover:border-ember hover:bg-ember/10 px-4 py-2 rounded-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {redeployLoading ? 'DEPLOYING...' : '[ DEPLOY AS DRAFT ]'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // AdminDashboard
 // ---------------------------------------------------------------------------
 export default function AdminDashboard() {
@@ -2773,10 +3019,10 @@ export default function AdminDashboard() {
   const TABS = [
     ['competition', 'OVERVIEW'],
     ['operators',   'OPERATORS'],
-    ['teams',  'TEAMS'],
+    ['teams',       'TEAMS'],
+    ['archive',     'ARCHIVE'],
     ['comms',       'COMMS'],
     ['settings',    'SETTINGS'],
-    
   ]
 
   return (
@@ -2829,8 +3075,8 @@ export default function AdminDashboard() {
         {tab === 'operators'   && <OperatorsTab />}
         {tab === 'comms'       && <CommsTab />}
         {tab === 'settings'    && <SettingsTab />}
-
-        {tab === 'teams'  && <TeamsTab />}
+        {tab === 'teams'       && <TeamsTab />}
+        {tab === 'archive'     && <ArchiveTab />}
       </div>
 
       <Footer />

@@ -323,7 +323,7 @@ async def _seed():
         # draft contract was already created on the new event.
         if _active_ev:
             _r = await db.execute(text(
-                "UPDATE contracts SET event_id = :aid WHERE event_id != :aid AND is_void = false"
+                "UPDATE contracts SET event_id = :aid WHERE event_id != :aid AND is_void = false AND is_archived = false"
             ), {"aid": _active_ev})
             if _r.rowcount:
                 print(f"[DEADNET] Migrated {_r.rowcount} contract(s) to active event {_active_ev}")
@@ -839,6 +839,10 @@ END $$""",
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 )""",
             "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS max_attempts INTEGER NOT NULL DEFAULT 0",
+            # Contract archive system
+            "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false",
+            "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
+            "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS source_contract_id UUID REFERENCES contracts(id) ON DELETE SET NULL",
         ]:
             await conn.execute(text(stmt))
     from app.utils.architect import validate_architect_passwords

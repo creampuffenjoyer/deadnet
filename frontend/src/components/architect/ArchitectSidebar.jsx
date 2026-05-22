@@ -8,6 +8,7 @@ import {
   MessageSquare,
   ScrollText,
   BookOpen,
+  Archive,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -38,10 +39,11 @@ const NAV_SECTIONS = [
   {
     label: 'PLATFORM',
     items: [
-      { key: 'comms',    label: 'COMMS',       Icon: MessageSquare },
-      { key: 'logs',     label: 'LOGS',        Icon: ScrollText },
-      { key: 'library',  label: 'CONTRACT LIBRARY',     Icon: BookOpen },
-      { key: 'settings', label: 'SETTINGS',    Icon: Settings },
+      { key: 'comms',    label: 'COMMS',            Icon: MessageSquare },
+      { key: 'logs',     label: 'LOGS',             Icon: ScrollText },
+      { key: 'library',  label: 'CONTRACT LIBRARY', Icon: BookOpen },
+      { key: 'archive',  label: 'CONTRACT ARCHIVE', Icon: Archive },
+      { key: 'settings', label: 'SETTINGS',         Icon: Settings },
     ],
   },
   {

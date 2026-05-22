@@ -6,6 +6,7 @@ import Footer from '../../components/ui/Footer'
 import Scanlines from '../../components/effects/Scanlines'
 import Badge from '../../components/ui/Badge'
 import { usePlatformFormat } from '../../hooks/usePlatformFormat'
+import { useAuth } from '../../context/AuthContext'
 
 const ALL_CATEGORIES = [
   'Web', 'Cryptography', 'Forensics', 'Pwn', 'Misc', 'OSINT',
@@ -1022,7 +1023,7 @@ function ConfirmDialog({ message, detail, confirmLabel = 'CONFIRM', confirmClass
 // ---------------------------------------------------------------------------
 // ContractCard — grid view card
 // ---------------------------------------------------------------------------
-function ContractCard({ contract, onOpen, onTogglePublish, onDelete }) {
+function ContractCard({ contract, onOpen, onTogglePublish, onDelete, onArchive }) {
   const cfg = RARITY_CONFIG[contract.rarity] || RARITY_CONFIG.COMMON
   const canEdit = contract.can_edit !== false
   const isMajor = contract.is_blocked_for_own_org
@@ -1100,6 +1101,15 @@ function ContractCard({ contract, onOpen, onTogglePublish, onDelete }) {
           >
             {contract.is_published ? 'UNPUB' : 'PUB'}
           </button>
+          {onArchive && (
+            <button
+              onClick={() => onArchive(contract)}
+              className="font-mono text-[10px] text-ghost hover:text-flare border border-ghost/20 hover:border-flare/50 px-2 py-0.5 rounded-sm transition-all"
+              title="Archive this contract for future reuse"
+            >
+              ARCH
+            </button>
+          )}
           <button
             onClick={() => onDelete(contract.id)}
             className="font-mono text-[10px] text-ghost hover:text-danger border border-ghost/20 hover:border-danger px-2 py-0.5 rounded-sm transition-all"
@@ -1586,7 +1596,7 @@ function SlideOutPanel({ contract, onClose, onSaved, onDelete, onFileUploaded })
 // ---------------------------------------------------------------------------
 // ContractsTab
 // ---------------------------------------------------------------------------
-function ContractsTab({ contracts, events, loadContracts, setFlagVariants, onNewContract }) {
+function ContractsTab({ contracts, events, loadContracts, setFlagVariants, onNewContract, isAdmin }) {
   const [view, setView] = useState('grid')
   const [sortBy, setSortBy] = useState('rarity')
   const [filterCategory, setFilterCategory] = useState('ALL')
@@ -1654,6 +1664,23 @@ function ContractsTab({ contracts, events, loadContracts, setFlagVariants, onNew
           setPanel(null)
           await loadContracts()
         } catch { setActionError('Delete failed.') }
+      },
+    })
+  }
+
+  function requestArchive(contract) {
+    setConfirm({
+      message:      'ARCHIVE CONTRACT?',
+      detail:       `"${contract.title}" will be unpublished and moved to the contract archive. It can be redeployed to future events from the Admin ARCHIVE tab.`,
+      confirmLabel: 'ARCHIVE',
+      confirmClass: 'text-flare border-flare/40 hover:border-flare hover:bg-flare/10',
+      onConfirm: async () => {
+        setConfirm(null)
+        try {
+          await client.post(`/admin/contracts/${contract.id}/archive`)
+          setPanel(null)
+          await loadContracts()
+        } catch { setActionError('Archive failed.') }
       },
     })
   }
@@ -1755,6 +1782,7 @@ function ContractsTab({ contracts, events, loadContracts, setFlagVariants, onNew
               onOpen={openPanel}
               onTogglePublish={requestTogglePublish}
               onDelete={requestDelete}
+              onArchive={isAdmin ? requestArchive : undefined}
             />
           ))}
         </div>
@@ -1803,6 +1831,14 @@ function ContractsTab({ contracts, events, loadContracts, setFlagVariants, onNew
                         >
                           {c.is_published ? 'UNPUB' : 'PUB'}
                         </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => requestArchive(c)}
+                            className="font-mono text-[10px] text-ghost hover:text-flare border border-ghost/20 hover:border-flare/50 px-2 py-0.5 rounded-sm transition-all"
+                          >
+                            ARCH
+                          </button>
+                        )}
                         <button
                           onClick={() => requestDelete(c.id)}
                           className="font-mono text-[10px] text-ghost hover:text-danger border border-ghost/20 hover:border-danger px-2 py-0.5 rounded-sm transition-all"
@@ -1883,6 +1919,8 @@ function ContractsTab({ contracts, events, loadContracts, setFlagVariants, onNew
 // ContractorDashboard
 // ---------------------------------------------------------------------------
 export default function ContractorDashboard() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'ADMIN'
   const [tab, setTab] = useState('contracts')
   const [contracts, setContracts] = useState([])
   const [events, setEvents] = useState([])
@@ -2081,6 +2119,7 @@ export default function ContractorDashboard() {
             loadContracts={loadContracts}
             setFlagVariants={setFlagVariants}
             onNewContract={() => { setFlagVariants(null); setModal({ mode: 'create' }) }}
+            isAdmin={isAdmin}
           />
         )}
 

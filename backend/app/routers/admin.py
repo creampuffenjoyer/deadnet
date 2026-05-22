@@ -8,12 +8,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, nullslast, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import require_admin
-from app.models.contract import BcEvent, BcEventType, Claim, Contract, IntelPurchase
+from app.models.contract import BcEvent, BcEventType, Claim, Contract, IntelDrop, IntelPurchase
 from app.models.event import Event, EventStatus
 from app.models.settings import PlatformSettings
 from app.models.team import Team, TeamMembership
@@ -679,3 +679,227 @@ async def force_resume_competition(
 
     await db.commit()
     return {"ok": True, "competition_active": True}
+
+
+# ---------------------------------------------------------------------------
+# Contract archive system
+# ---------------------------------------------------------------------------
+
+class RedeployRequest(BaseModel):
+    event_id: int
+
+
+@router.get("/contracts/archive")
+async def list_archived_contracts(
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all archived contracts scoped to this admin's org."""
+    scope = get_organization_scope(current_user, None)
+    q = (
+        select(Contract)
+        .where(Contract.is_archived == True, Contract.is_void == False)
+        .order_by(nullslast(Contract.archived_at.desc()))
+    )
+    if scope is not None:
+        q = q.where(Contract.org_id == scope)
+
+    contracts = (await db.execute(q)).scalars().all()
+    if not contracts:
+        return []
+
+    cids = [c.id for c in contracts]
+
+    # Batch-fetch events
+    event_ids = {c.event_id for c in contracts if c.event_id}
+    events_map: dict = {}
+    if event_ids:
+        rows = (await db.execute(select(Event).where(Event.id.in_(event_ids)))).scalars().all()
+        events_map = {e.id: e for e in rows}
+
+    # Claim counts (historical — all events)
+    claim_rows = (await db.execute(
+        select(Claim.contract_id, func.count(Claim.id))
+        .where(Claim.contract_id.in_(cids))
+        .group_by(Claim.contract_id)
+    )).all()
+    claim_counts = {str(r[0]): r[1] for r in claim_rows}
+
+    # Intel drop counts
+    intel_rows = (await db.execute(
+        select(IntelDrop.contract_id, func.count(IntelDrop.id))
+        .where(IntelDrop.contract_id.in_(cids))
+        .group_by(IntelDrop.contract_id)
+    )).all()
+    intel_counts = {str(r[0]): r[1] for r in intel_rows}
+
+    # Creator usernames
+    creator_ids = {c.created_by for c in contracts if c.created_by}
+    creators: dict = {}
+    if creator_ids:
+        rows = (await db.execute(select(User.id, User.username).where(User.id.in_(creator_ids)))).all()
+        creators = {str(r[0]): r[1] for r in rows}
+
+    result = []
+    for c in contracts:
+        evt = events_map.get(c.event_id) if c.event_id else None
+        result.append({
+            "id": str(c.id),
+            "title": c.title,
+            "category": c.category.value if hasattr(c.category, "value") else c.category,
+            "rarity": c.rarity.value if hasattr(c.rarity, "value") else c.rarity,
+            "base_bc_value": c.base_bc_value,
+            "tags": c.tags or [],
+            "attachment_count": len(c.attachments or []),
+            "intel_count": intel_counts.get(str(c.id), 0),
+            "claim_count": claim_counts.get(str(c.id), 0),
+            "archived_at": c.archived_at.isoformat() if c.archived_at else None,
+            "event_id": c.event_id,
+            "event_name": evt.name if evt else None,
+            "event_status": evt.status.value if evt and hasattr(evt.status, "value") else (evt.status if evt else None),
+            "creator_username": creators.get(str(c.created_by)) if c.created_by else None,
+            "source_contract_id": str(c.source_contract_id) if c.source_contract_id else None,
+        })
+    return result
+
+
+@router.post("/contracts/{contract_id}/archive")
+async def toggle_contract_archive(
+    contract_id: UUID,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Toggle the archived flag on a contract. Unpublishes it when archiving."""
+    contract = (await db.execute(
+        select(Contract).where(Contract.id == contract_id, Contract.is_void == False)
+    )).scalar_one_or_none()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    _check_organization_access(current_user, contract.org_id)
+
+    contract.is_archived = not contract.is_archived
+    if contract.is_archived:
+        contract.archived_at = datetime.utcnow()
+        contract.is_published = False  # always unpublish on archive
+    else:
+        contract.archived_at = None
+
+    await db.commit()
+    return {
+        "is_archived": contract.is_archived,
+        "archived_at": contract.archived_at.isoformat() if contract.archived_at else None,
+    }
+
+
+@router.post("/events/{event_id}/archive-contracts")
+async def bulk_archive_event_contracts(
+    event_id: int,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Archive all non-void, non-archived contracts from the given event."""
+    event = (await db.execute(select(Event).where(Event.id == event_id))).scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    _check_organization_access(current_user, event.org_id)
+
+    scope = get_organization_scope(current_user, None)
+
+    # Count total eligible contracts before org scope to compute skipped
+    total_q = select(func.count(Contract.id)).where(
+        Contract.event_id == event_id,
+        Contract.is_void == False,
+        Contract.is_archived == False,
+    )
+    total_eligible: int = (await db.execute(total_q)).scalar() or 0
+
+    q = select(Contract).where(
+        Contract.event_id == event_id,
+        Contract.is_void == False,
+        Contract.is_archived == False,
+    )
+    if scope is not None:
+        q = q.where(Contract.org_id == scope)
+
+    contracts = (await db.execute(q)).scalars().all()
+    now = datetime.utcnow()
+    for c in contracts:
+        c.is_archived = True
+        c.archived_at = now
+        c.is_published = False
+
+    await db.commit()
+    return {"archived": len(contracts), "skipped": total_eligible - len(contracts)}
+
+
+@router.post("/contracts/{contract_id}/redeploy", status_code=201)
+async def redeploy_contract(
+    contract_id: UUID,
+    body: RedeployRequest,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create an exact copy of an archived contract in the target event as a DRAFT."""
+    source = (await db.execute(
+        select(Contract).where(Contract.id == contract_id, Contract.is_archived == True)
+    )).scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Archived contract not found")
+    _check_organization_access(current_user, source.org_id)
+
+    target_event = (await db.execute(
+        select(Event).where(Event.id == body.event_id)
+    )).scalar_one_or_none()
+    if not target_event:
+        raise HTTPException(status_code=404, detail="Target event not found")
+    _check_organization_access(current_user, target_event.org_id)
+    _ev_status = target_event.status.value if hasattr(target_event.status, 'value') else str(target_event.status)
+    if _ev_status in ('CLOSED', 'ARCHIVED'):
+        raise HTTPException(status_code=400, detail="Cannot redeploy to a closed or archived event")
+
+    import uuid as _uuid
+    copy = Contract(
+        id=_uuid.uuid4(),
+        event_id=body.event_id,
+        org_id=source.org_id,
+        title=source.title,
+        description=source.description,
+        category=source.category,
+        rarity=source.rarity,
+        base_bc_value=source.base_bc_value,
+        flag=source.flag,
+        is_published=False,
+        is_void=False,
+        is_archived=False,
+        max_attempts=source.max_attempts,
+        attachments=list(source.attachments or []),
+        tags=list(source.tags or []),
+        contributing_org_id=source.contributing_org_id,
+        is_blocked_for_own_org=source.is_blocked_for_own_org,
+        created_by=source.created_by,
+        source_contract_id=source.id,
+    )
+    db.add(copy)
+    await db.flush()
+
+    # Copy intel drops with fresh UUIDs
+    drops = (await db.execute(
+        select(IntelDrop)
+        .where(IntelDrop.contract_id == source.id)
+        .order_by(IntelDrop.order_index)
+    )).scalars().all()
+    for drop in drops:
+        db.add(IntelDrop(
+            contract_id=copy.id,
+            content=drop.content,
+            cost_bc=drop.cost_bc,
+            order_index=drop.order_index,
+        ))
+
+    await db.commit()
+    return {
+        "id": str(copy.id),
+        "title": copy.title,
+        "event_id": copy.event_id,
+        "message": "Contract redeployed as draft",
+    }

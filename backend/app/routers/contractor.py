@@ -212,6 +212,7 @@ async def list_all_contracts(
         .where(
             Contract.event_id == event_id,
             Contract.is_void == False,
+            Contract.is_archived == False,
             Contract.created_by == current_user.id,
         )
         .order_by(Contract.category, Contract.rarity, Contract.title)
@@ -256,6 +257,7 @@ async def list_all_contracts(
             "contributing_org_id": c.contributing_org_id,
             "is_blocked_for_own_org": c.is_blocked_for_own_org or False,
             "max_attempts": c.max_attempts or 0,
+            "is_archived": c.is_archived or False,
             "can_edit": True,
         }
         for c in contracts

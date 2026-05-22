@@ -73,6 +73,10 @@ class Contract(Base):
     # Session 18 — Major Event fields
     contributing_org_id    = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True)
     is_blocked_for_own_org = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Contract archive system
+    is_archived        = Column(Boolean, default=False, nullable=False, server_default="false")
+    archived_at        = Column(DateTime, nullable=True)
+    source_contract_id = Column(UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime,
