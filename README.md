@@ -3,9 +3,9 @@
 <!-- Animated title using SVG -->
 [![Typing SVG](https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=800&size=42&duration=3000&pause=1000&color=FF4500&center=true&vCenter=true&width=800&height=80&lines=DEADNET;CAPTURE+THE+FLAG+PLATFORM;THE+VOID+IS+WAITING)](https://git.io/typing-svg)
 
-<img src="https://img.shields.io/badge/STATUS-OPERATIONAL-FF4500?style=for-the-badge&labelColor=0A0A0F&color=FF4500&logo=statuspage&logoColor=FF4500"/>
+<img src="https://img.shields.io/badge/STATUS-GHOSTED-FF4500?style=for-the-badge&labelColor=0A0A0F&color=FF4500&logo=statuspage&logoColor=FF4500"/>
 <img src="https://img.shields.io/badge/VERSION-1.0.0-FF6B00?style=for-the-badge&labelColor=0A0A0F"/>
-<img src="https://img.shields.io/badge/CLEARANCE-CLASSIFIED-FF2D2D?style=for-the-badge&labelColor=0A0A0F"/>
+<img src="https://img.shields.io/badge/CLEARANCE-???-FF2D2D?style=for-the-badge&labelColor=0A0A0F"/>
 
 <br/>
 
@@ -28,8 +28,7 @@
 
   > CONNECTION ESTABLISHED
   > LOCATION: UNKNOWN
-  > ARCHITECT: s0L
-  > "the void is not empty. it is waiting."
+  > STATUS: DOWN
 ```
 
 <div align="center">
