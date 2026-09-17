@@ -213,7 +213,6 @@ deadnet/
   INSTITUTION:  Laguna State Polytechnic University Siniloan Campus
   YEAR       :  2026
 
-  "if you are reading this, you think like an architect."
 ```
 
 <br/>
