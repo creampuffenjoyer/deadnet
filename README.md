@@ -28,7 +28,7 @@
 
   > CONNECTION ESTABLISHED
   > LOCATION: UNKNOWN
-  > STATUS: DOWN
+  > STATUS: UP
 ```
 
 <div align="center">
